@@ -1,0 +1,104 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Support Call Incident Form",
+  "description": "Form automatically filled by AI from a support call transcript. The support team reviews this after receiving the completion notification email.",
+  "type": "object",
+  "required": [
+    "form_id",
+    "completed_at",
+    "caller_information",
+    "call_details",
+    "issue",
+    "resolution",
+    "follow_up"
+  ],
+  "properties": {
+    "form_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this completed form."
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the AI completed filling out this form."
+    },
+    "caller_information": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Caller's full name (if mentioned)." },
+        "account_or_reference": { "type": "string", "description": "Any account number, customer ID, or reference mentioned." },
+        "contact_info": { "type": "string", "description": "Phone number or email if mentioned." }
+      }
+    },
+    "call_details": {
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date-time", "description": "Date/time of the call." },
+        "duration_estimate": { "type": "string", "description": "Estimated call duration based on transcript length." },
+        "agent_name": { "type": "string", "description": "Name of the support agent." }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": ["Technical", "Billing", "Account", "Shipping", "Network", "Software", "Hardware", "General"],
+          "description": "Primary issue category."
+        },
+        "priority": {
+          "type": "string",
+          "enum": ["Low", "Medium", "High", "Critical"],
+          "description": "Estimated priority based on urgency expressed in the call."
+        },
+        "description": { "type": "string", "description": "Clear description of the problem the caller reported." },
+        "error_messages": { "type": "string", "description": "Any specific error messages or codes mentioned." }
+      }
+    },
+    "resolution": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["Resolved", "Partially Resolved", "Unresolved", "Escalated"],
+          "description": "Whether the issue was resolved during the call."
+        },
+        "steps_taken": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Steps the agent took to resolve the issue."
+        },
+        "outcome": { "type": "string", "description": "Final outcome of the call." }
+      }
+    },
+    "follow_up": {
+      "type": "object",
+      "properties": {
+        "required": { "type": "boolean", "description": "Whether follow-up action is needed." },
+        "actions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Specific follow-up actions needed."
+        },
+        "department": { "type": "string", "description": "Department to escalate/forward to, if applicable." }
+      }
+    },
+    "customer_sentiment": {
+      "type": "string",
+      "enum": ["Very Satisfied", "Satisfied", "Neutral", "Dissatisfied", "Very Dissatisfied"],
+      "description": "Customer's apparent satisfaction level."
+    },
+    "call_summary": {
+      "type": "string",
+      "description": "Brief 2-3 sentence summary of the entire call."
+    },
+    "transcript": {
+      "type": "object",
+      "properties": {
+        "full_text": { "type": "string" },
+        "word_count": { "type": "integer" }
+      }
+    }
+  }
+}
