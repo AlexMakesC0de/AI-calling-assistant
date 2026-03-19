@@ -1,9 +1,13 @@
 # Customer Support Call Transcription & Incident Form System
 
 A fully local, Docker Compose–orchestrated pipeline that takes **recorded
-customer support calls**, **transcribes** them with OpenAI Whisper, uses an
-**AI (Ollama)** to automatically fill out an **incident form**, and **emails**
-the completed form to the support team.
+customer support calls**, **transcribes** them with **speaker diarization**
+(identifies who said what), uses an **AI (Ollama)** to automatically fill out
+an **incident form**, and **emails** the completed form to the support team.
+
+The transcriber uses **faster-whisper** for speech-to-text with word-level
+timestamps, combined with **speechbrain ECAPA-TDNN** speaker embeddings and
+**spectral clustering** to separate speakers (e.g. Agent vs Caller).
 
 The entire pipeline is automatic — upload an audio file and everything
 happens on its own.
@@ -23,10 +27,10 @@ happens on its own.
           │ sends audio to...
           ▼
   ┌───────────────┐
-  │    Whisper    │  Converts speech to text (transcription)
-  │  (port 9000)  │
+  │  Transcriber  │  Speech-to-text (faster-whisper) with
+  │  (port 9000)  │  speaker diarization (speechbrain)
   └───────┬───────┘
-          │ transcript text goes to...
+          │ diarized transcript goes to...
           ▼
   ┌───────────────────┐
   │    Transcript     │  AI reads the transcript and fills out
@@ -57,7 +61,7 @@ happens on its own.
 | 1 | PostgreSQL 16 | `support-db` | 5432 | Stores n8n data + incident forms |
 | 2 | n8n | `support-n8n` | 5678 | Workflow orchestration (optional) |
 | 3 | Voice App | `support-voice-app` | 5000 | Upload audio, runs full pipeline |
-| 4 | Whisper ASR | `support-whisper` | 9000 | Speech-to-text engine |
+| 4 | Transcriber | `support-transcriber` | 9000 | Speech-to-text + speaker diarization |
 | 5 | Transcript Formatter | `support-transcript-formatter` | 5001 | AI-powered incident form filler |
 | 6 | Email Sender | `support-email-sender` | 5002 | SMTP email dispatch |
 | 7 | Mailpit (dev) | `support-mailpit` | 8025 | Local email catch-all |
@@ -71,7 +75,7 @@ happens on its own.
 
 - **Docker Engine** ≥ 24.x with Docker Compose v2
 - **Ollama** installed on the host with a model pulled
-- **~8 GB RAM** free (Whisper model + Ollama LLM in memory)
+- **~10 GB RAM** free (Whisper + speechbrain models + Ollama LLM in memory)
 
 ### Ollama Setup
 
@@ -122,10 +126,32 @@ curl -s -X POST http://localhost:5000/upload \
 ### Automatic Pipeline
 Upload an audio file and the system automatically:
 1. **Validates** the file (format, size, MIME type)
-2. **Transcribes** the audio via Whisper
-3. **AI fills** the incident form (caller info, issue, resolution, follow-up)
-4. **Emails** the completed form to the support team
-5. **Stores** the form in PostgreSQL for records
+2. **Classifies** the call opening (service vs personal) to avoid unnecessary processing
+3. **Transcribes** service calls via faster-whisper with **speaker diarization**
+4. **AI fills** the incident form — speaker labels help identify agent vs caller
+5. **Emails** the completed form to the support team
+6. **Stores** the form in PostgreSQL for records
+
+### Multi-Language Support
+The transcriber auto-detects spoken language and includes:
+- `detected_language` (e.g. `en`, `nl`)
+- `language_probability` (confidence score)
+
+This metadata is passed through the pipeline and added to form metadata.
+
+### Automatic Call Filtering (ISR-74)
+Before full processing, the voice app runs a call gate:
+- Uses optional telephony metadata (`call_type_signal`) when available
+- Otherwise transcribes only the opening window and checks service declaration/intent
+- Personal calls are skipped automatically (no formatter/email/database write)
+
+This keeps the system fully automated while reducing non-work processing.
+
+### Speaker Diarization
+The transcriber identifies different speakers in the audio and labels each
+line of the transcript (e.g. "Speaker 1: ...", "Speaker 2: ..."). This helps
+the AI accurately determine who is the support agent and who is the caller,
+leading to better form-filling accuracy.
 
 ### AI Confidence Scoring
 The AI rates its confidence ("high" / "medium" / "low") for every field
@@ -133,7 +159,7 @@ it fills. Low-confidence fields are flagged in the email so support staff
 know which fields may need manual review.
 
 ### Retry Logic
-All HTTP calls between services (Whisper, Formatter, Email) have automatic
+All HTTP calls between services (Transcriber, Formatter, Email) have automatic
 retry with exponential backoff (3 attempts). Temporary failures won't break
 the pipeline.
 
@@ -161,6 +187,7 @@ Upload an audio file and run the full pipeline.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `file` | form-data | yes | Audio file (.wav, .mp3, .ogg, .flac, .m4a, .webm) |
+| `call_type_signal` | form-data | no | Optional upstream IVR signal: `service`/`personal`/`1`/`2` |
 
 **Response:** Full pipeline result with transcription, incident form, email
 status, database status, and confidence scores.
@@ -224,6 +251,12 @@ IT-2C/
 │   ├── app.py
 │   └── .dockerignore
 │
+├── transcriber/                      # Speech-to-text + speaker diarization
+│   ├── Dockerfile
+│   ├── requirements.txt
+│   ├── app.py
+│   └── .dockerignore
+│
 ├── transcript-formatter/             # AI-powered incident form filler
 │   ├── Dockerfile
 │   ├── requirements.txt
@@ -265,7 +298,10 @@ All variables have sensible defaults. Override them in a `.env` file.
 | `SMTP_USE_TLS` | `false` | email-sender | Enable STARTTLS |
 | `SUPPORT_EMAIL` | `support-team@example.com` | voice-app | Where to send completed forms |
 | `OLLAMA_MODEL` | `llama3.1:8b` | transcript-formatter | Ollama model for AI |
+| `WHISPER_MODEL` | `small` | transcriber | Whisper model size (tiny/base/small/medium/large-v2/large-v3) |
 | `MAX_FILE_SIZE_MB` | `50` | voice-app | Max upload size |
+| `OPENING_WINDOW_SECONDS` | `20` | voice-app | Seconds used for opening intent classification |
+| `SERVICE_DECLARATION_PHRASES` | built-in defaults | voice-app | Comma-separated service-call declaration phrases |
 
 ---
 

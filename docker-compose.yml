@@ -75,7 +75,7 @@ services:
     network_mode: host
     environment:
       UPLOAD_DIR: /data/shared/uploads
-      WHISPER_URL: http://localhost:9000/asr
+      TRANSCRIBER_URL: http://localhost:9000/transcribe
       FORMATTER_URL: http://localhost:5001/format
       EMAIL_URL: http://localhost:5002/send
       SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support-team@example.com}
@@ -92,31 +92,35 @@ services:
       timeout: 5s
       retries: 3
     depends_on:
-      whisper:
+      transcriber:
         condition: service_healthy
       email-sender:
         condition: service_healthy
 
   # -----------------------------------------------------------------------
-  # 4. STT Engine – Whisper ASR web service (speech-to-text)
+  # 4. Transcriber – Whisper STT + Speaker Diarization
+  #    Uses faster-whisper for word-level timestamps and speechbrain
+  #    ECAPA-TDNN embeddings with spectral clustering for diarization.
   # -----------------------------------------------------------------------
-  whisper:
+  transcriber:
     <<: *common
-    image: onerahmet/openai-whisper-asr-webservice:latest
-    container_name: support-whisper
+    build:
+      context: ./transcriber
+      dockerfile: Dockerfile
+    container_name: support-transcriber
     environment:
-      ASR_MODEL: small
-      ASR_ENGINE: openai_whisper
+      WHISPER_MODEL_SIZE: ${WHISPER_MODEL:-small}
     ports:
       - "9000:9000"
     volumes:
       - shared_data:/data/shared
+      - whisper_models:/models
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/docs || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
 
   # -----------------------------------------------------------------------
   # 5. Transcript Formatter – custom Flask API (raw text → report JSON)
@@ -195,6 +199,8 @@ volumes:
   n8n_data:
     driver: local
   shared_data:
+    driver: local
+  whisper_models:
     driver: local
 
 # ---------------------------------------------------------------------------

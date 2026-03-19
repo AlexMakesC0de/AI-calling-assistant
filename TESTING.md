@@ -16,10 +16,10 @@ You upload a recorded support call (audio file)
          │  automatically sends to...
          ▼
   ┌─────────────┐
-  │   Whisper   │  Converts speech to text (transcription)
-  │  (port 9000)│
+  │ Transcriber │  Converts speech to text with speaker
+  │ (port 9000) │  diarization (tells apart Agent vs Caller)
   └──────┬──────┘
-         │  transcript text goes to...
+         │  diarized transcript goes to...
          ▼
   ┌─────────────────┐
   │   Transcript    │  AI reads the transcript and fills out
@@ -58,7 +58,7 @@ Before testing, make sure:
 2. **Ollama is running** on your machine (the AI that fills the form):
    ```bash
    systemctl status ollama     # should be "active (running)"
-   ollama list                 # should include llama3.2:1b
+   ollama list                 # should include llama3.1:8b
    ```
 
 3. **All containers are healthy:**
@@ -115,7 +115,7 @@ curl -s -X POST http://localhost:5000/upload \
 ### Step 3: Wait for the pipeline
 
 The system will:
-1. Transcribe the audio (Whisper) — takes a few seconds
+1. Transcribe the audio with speaker diarization — takes 10-30 seconds
 2. Fill out the incident form (AI) — takes 10-30 seconds on first run
 3. Send the email — instant
 
@@ -142,7 +142,7 @@ You should see an email with:
 ## Test 3: Test just the AI form-filler
 
 If you want to test the AI form-filling without uploading audio (skip the
-Whisper step), you can send a transcript directly:
+transcriber step), you can send a transcript directly:
 
 ```bash
 curl -s -X POST http://localhost:5001/format \
@@ -243,7 +243,7 @@ Issue resolved successfully.
 | Problem | Solution |
 |---------|----------|
 | Container is unhealthy | `docker compose logs <container-name>` |
-| Whisper takes long to start | First boot downloads the model (~140 MB). Wait 60s |
+| Whisper takes long to start | First boot downloads models (~1-2 GB for Whisper + speechbrain). Wait 2-3 min |
 | AI returns basic/wrong form | Check if Ollama is running: `systemctl status ollama` |
 | First AI request is slow (30s) | Normal — Ollama loads the model into memory on first request |
 | Email not showing in Mailpit | Make sure `.env` has `SMTP_HOST=mailpit` and `SMTP_PORT=1025`, then rebuild: `docker compose --profile dev up -d --build email-sender` |
@@ -278,6 +278,6 @@ systemctl status ollama
 | Voice App | http://localhost:5000 | Upload audio files |
 | Transcript Formatter | http://localhost:5001 | AI form-filler |
 | Email Sender | http://localhost:5002 | Send emails |
-| Whisper API | http://localhost:9000/docs | Speech-to-text engine |
+| Whisper API | http://localhost:9000/health | Transcriber + diarization |
 | n8n Workflows | http://localhost:5678 | Visual workflow editor |
 | Mailpit Inbox | http://localhost:8025 | View caught emails |

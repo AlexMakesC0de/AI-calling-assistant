@@ -14,6 +14,7 @@ then automatically triggers the full pipeline:
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -38,7 +39,7 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/shared/uploads"))
-WHISPER_URL = os.getenv("WHISPER_URL", "http://whisper:9000/asr")
+TRANSCRIBER_URL = os.getenv("TRANSCRIBER_URL", "http://localhost:9000/transcribe")
 FORMATTER_URL = os.getenv("FORMATTER_URL", "http://localhost:5001/format")
 EMAIL_URL = os.getenv("EMAIL_URL", "http://email-sender:5002/send")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support-team@example.com")
@@ -53,6 +54,26 @@ ALLOWED_MIME_TYPES = {
     "audio/ogg", "audio/flac",
     "audio/mp4", "audio/m4a", "audio/x-m4a",
     "audio/webm",
+}
+
+# Call gate settings (ISR-74)
+OPENING_WINDOW_SECONDS = int(os.getenv("OPENING_WINDOW_SECONDS", "20"))
+SERVICE_DECLARATION_PHRASES = [
+    p.strip().lower()
+    for p in os.getenv(
+        "SERVICE_DECLARATION_PHRASES",
+        "this is a service call,this is for support,this is a support call,dit is een servicegesprek,dit is voor support",
+    ).split(",")
+    if p.strip()
+]
+SERVICE_HINT_TERMS = {
+    "service", "support", "incident", "issue", "problem", "ticket",
+    "technical", "billing", "network", "error", "repair", "storing",
+    "klacht", "hulp", "ondersteuning",
+}
+PERSONAL_HINT_TERMS = {
+    "personal", "private", "friend", "family", "dinner", "party",
+    "birthday", "vacation", "weekend", "persoonlijk", "prive",
 }
 
 # Database settings
@@ -214,15 +235,29 @@ _RETRYABLE = (requests.exceptions.ConnectionError, requests.exceptions.Timeout)
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
-def _transcribe(filepath: Path) -> dict:
-    """Send the audio file to the Whisper ASR service and return the result.
+def _transcribe(
+    filepath: Path,
+    *,
+    diarize: bool = True,
+    num_speakers: int = 2,
+    max_duration_seconds: int | None = None,
+) -> dict:
+    """Send the audio file to the transcriber service (Whisper + diarization).
+
+    Returns a dict with 'text' (diarized), 'plain_text', 'word_count',
+    'speakers_detected', 'diarized', and 'segments'.
 
     Retries up to 3 times on connection errors / timeouts.
     """
     with open(filepath, "rb") as f:
-        files = {"audio_file": (filepath.name, f, "audio/wav")}
-        params = {"task": "transcribe", "output": "json"}
-        resp = requests.post(WHISPER_URL, files=files, params=params, timeout=300)
+        files = {"file": (filepath.name, f, "audio/wav")}
+        data = {
+            "diarize": "true" if diarize else "false",
+            "num_speakers": str(num_speakers),
+        }
+        if max_duration_seconds is not None:
+            data["max_duration_seconds"] = str(max_duration_seconds)
+        resp = requests.post(TRANSCRIBER_URL, files=files, data=data, timeout=600)
     resp.raise_for_status()
     return resp.json()
 
@@ -234,18 +269,99 @@ def _transcribe(filepath: Path) -> dict:
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
-def _call_formatter(transcript_text: str) -> dict:
+def _call_formatter(transcript_text: str, metadata: dict | None = None) -> dict:
     """Send the transcript to the AI formatter and return the completed form.
 
     Retries up to 3 times on connection errors / timeouts.
     """
     resp = requests.post(
         FORMATTER_URL,
-        json={"transcript": transcript_text},
+        json={"transcript": transcript_text, "metadata": metadata or {}},
         timeout=180,
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def _normalize_text(text: str) -> str:
+    """Normalize text for simple phrase matching."""
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def _classify_call_type(filepath: Path, call_type_signal: str | None) -> dict:
+    """Classify whether a call is service-related or personal.
+
+    Priority order:
+      1) Explicit call_type_signal from telephony/IVR metadata
+      2) Opening-window phrase and intent checks (fallback)
+    """
+    if call_type_signal:
+        normalized = call_type_signal.strip().lower()
+        if normalized in {"service", "service_related", "work", "1"}:
+            return {
+                "call_type": "service",
+                "source": "ivr_signal",
+                "confidence": "high",
+                "reason": "Explicit service selection from caller input.",
+            }
+        if normalized in {"personal", "private", "2"}:
+            return {
+                "call_type": "personal",
+                "source": "ivr_signal",
+                "confidence": "high",
+                "reason": "Explicit personal-call selection from caller input.",
+            }
+
+    preview = _transcribe(
+        filepath,
+        diarize=False,
+        num_speakers=1,
+        max_duration_seconds=OPENING_WINDOW_SECONDS,
+    )
+    opening_text = _normalize_text(preview.get("plain_text") or preview.get("text", ""))
+
+    if any(phrase in opening_text for phrase in SERVICE_DECLARATION_PHRASES):
+        return {
+            "call_type": "service",
+            "source": "opening_phrase",
+            "confidence": "high",
+            "reason": "Service declaration detected in call opening.",
+            "opening_preview": opening_text,
+            "detected_language": preview.get("detected_language"),
+        }
+
+    service_hits = sum(1 for term in SERVICE_HINT_TERMS if term in opening_text)
+    personal_hits = sum(1 for term in PERSONAL_HINT_TERMS if term in opening_text)
+
+    if personal_hits >= 2 and service_hits == 0:
+        return {
+            "call_type": "personal",
+            "source": "opening_intent",
+            "confidence": "medium",
+            "reason": "Opening seems non-service based on intent keywords.",
+            "opening_preview": opening_text,
+            "detected_language": preview.get("detected_language"),
+        }
+
+    if service_hits >= 1:
+        return {
+            "call_type": "service",
+            "source": "opening_intent",
+            "confidence": "medium",
+            "reason": "Opening seems service-related based on intent keywords.",
+            "opening_preview": opening_text,
+            "detected_language": preview.get("detected_language"),
+        }
+
+    # Fail-open: keep service calls flowing when uncertain.
+    return {
+        "call_type": "service",
+        "source": "fallback",
+        "confidence": "low",
+        "reason": "Unable to confidently classify call opening; defaulting to service processing.",
+        "opening_preview": opening_text,
+        "detected_language": preview.get("detected_language"),
+    }
 
 
 @retry(
@@ -318,17 +434,51 @@ def upload_audio():
         "pipeline": {},
     }
 
-    # ── Step 1: Transcribe via Whisper ────────────────────────────────────
-    logger.info("Step 1: Transcribing %s via Whisper...", filename)
+    # ── Step 0: Gate non-service calls (ISR-74) ───────────────────────────
+    call_type_signal = request.form.get("call_type_signal")
     try:
-        transcription = _transcribe(filepath)
+        call_gate = _classify_call_type(filepath, call_type_signal)
+        result["pipeline"]["call_gate"] = call_gate
+    except Exception as exc:
+        logger.error("Call classification failed after retries: %s", exc)
+        result["pipeline"]["call_gate"] = {
+            "call_type": "service",
+            "source": "error_fallback",
+            "confidence": "low",
+            "reason": f"Classifier failed ({exc}); defaulting to service processing.",
+        }
+
+    if result["pipeline"]["call_gate"].get("call_type") == "personal":
+        logger.info("Call classified as personal. Skipping transcription/analysis pipeline.")
+        result["pipeline"]["transcription"] = {"status": "skipped", "reason": "non_service_call"}
+        result["pipeline"]["incident_form"] = {"status": "skipped", "reason": "non_service_call"}
+        result["pipeline"]["email"] = {"status": "skipped", "reason": "non_service_call"}
+        result["pipeline"]["database"] = {"status": "skipped", "reason": "non_service_call"}
+        result["pipeline"]["note"] = "Call classified as personal; downstream pipeline skipped."
+        return jsonify(result), 200
+
+    # ── Step 1: Transcribe with speaker diarization ───────────────────────
+    logger.info("Step 1: Transcribing %s with diarization...", filename)
+    try:
+        transcription = _transcribe(filepath, diarize=True, num_speakers=2)
         transcript_text = transcription.get("text", "")
+        plain_text = transcription.get("plain_text", transcript_text)
+        speakers_detected = transcription.get("speakers_detected", 1)
+        is_diarized = transcription.get("diarized", False)
+        detected_language = transcription.get("detected_language")
+        language_probability = transcription.get("language_probability")
         result["pipeline"]["transcription"] = {
             "status": "success",
             "text": transcript_text,
-            "word_count": len(transcript_text.split()),
+            "plain_text": plain_text,
+            "word_count": transcription.get("word_count", len(transcript_text.split())),
+            "speakers_detected": speakers_detected,
+            "diarized": is_diarized,
+            "detected_language": detected_language,
+            "language_probability": language_probability,
         }
-        logger.info("Transcription complete: %d words", len(transcript_text.split()))
+        logger.info("Transcription complete: %d words, %d speakers, diarized=%s",
+                    transcription.get("word_count", 0), speakers_detected, is_diarized)
     except Exception as exc:
         logger.error("Transcription failed after retries: %s", exc)
         result["pipeline"]["transcription"] = {"status": "failed", "error": str(exc)}
@@ -343,7 +493,13 @@ def upload_audio():
     # ── Step 2: AI fills out the incident form ───────────────────────────
     logger.info("Step 2: Sending transcript to AI formatter...")
     try:
-        completed_form = _call_formatter(transcript_text)
+        formatter_metadata = {
+            "detected_language": result["pipeline"]["transcription"].get("detected_language"),
+            "language_probability": result["pipeline"]["transcription"].get("language_probability"),
+            "speakers_detected": result["pipeline"]["transcription"].get("speakers_detected"),
+            "call_gate": result["pipeline"].get("call_gate"),
+        }
+        completed_form = _call_formatter(transcript_text, metadata=formatter_metadata)
         result["pipeline"]["incident_form"] = {
             "status": "completed",
             "form_id": completed_form.get("form_id"),
