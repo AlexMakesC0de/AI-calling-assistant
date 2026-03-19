@@ -72,14 +72,17 @@ services:
       dockerfile: Dockerfile
     container_name: support-voice-app
     restart: unless-stopped
-    network_mode: host
+    networks:
+      - app-network
+    ports:
+      - "5000:5000"
     environment:
       UPLOAD_DIR: /data/shared/uploads
-      WHISPER_URL: http://localhost:9000/asr
-      FORMATTER_URL: http://localhost:5001/format
-      EMAIL_URL: http://localhost:5002/send
+      WHISPER_URL: http://whisper:9000/asr
+      FORMATTER_URL: http://transcript-formatter:5001/format
+      EMAIL_URL: http://email-sender:5002/send
       SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support-team@example.com}
-      DB_HOST: localhost
+      DB_HOST: database
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB:-support_db}
       DB_USER: ${POSTGRES_USER:-support}
@@ -116,7 +119,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
 
   # -----------------------------------------------------------------------
   # 5. Transcript Formatter – custom Flask API (raw text → report JSON)
@@ -128,10 +131,13 @@ services:
       dockerfile: Dockerfile
     container_name: support-transcript-formatter
     restart: unless-stopped
-    network_mode: host
+    networks:
+      - app-network
+    ports:
+      - "5001:5001"
     environment:
       TEMPLATE_DIR: /data/shared/templates
-      OLLAMA_URL: http://localhost:11434
+      OLLAMA_URL: http://host.docker.internal:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:1b}
     volumes:
       - shared_data:/data/shared
