@@ -25,6 +25,9 @@ from marshmallow import Schema, fields, validate, ValidationError
 # ---------------------------------------------------------------------------
 
 app = Flask(__name__)
+# Ensure Flask produces UTF-8 JSON output without escaping non-ASCII characters.
+# This makes Russian (and other non-latin) text readable in responses.
+app.config["JSON_AS_ASCII"] = False
 app.config["TEMPLATE_DIR"] = os.getenv("TEMPLATE_DIR", "/data/shared/templates")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
@@ -367,7 +370,9 @@ def format_transcript():
     form = build_incident_form(data)
     logger.info("Completed incident form %s (confidence: %s)",
                 form["form_id"], form["confidence"]["overall"])
-    return jsonify(form), 200
+    response = jsonify(form)
+    response.headers['Content-Language'] = 'en'
+    return response, 200
 
 
 # ---------------------------------------------------------------------------
