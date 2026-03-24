@@ -24,11 +24,27 @@ services:
       - "5432:5432"
     volumes:
       - pg_data:/var/lib/postgresql/data
+      - ./database/initDb:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-support}"]
       interval: 10s
       timeout: 5s
       retries: 5
+  
+  pgAdmin:
+    image: dpage/pgadmin4
+    container_name: pgAdmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${adminEmail}
+      PGADMIN_DEFAULT_PASSWORD: ${adminpassword}
+    ports:
+      - "8080:80"
+    depends_on:
+      database:
+        condition: service_healthy
+    volumes:
+      - ./pgadmin_data:/var/lib/pgadmin
+
 
   # -----------------------------------------------------------------------
   # 2. Orchestrator – n8n (workflow automation)
