@@ -1,0 +1,107 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: voice-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: voice-app
+  template:
+    metadata:
+      labels:
+        app: voice-app
+    spec:
+      containers:
+        - name: voice-app
+          image: voice-app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 5000
+          env:
+            - name: UPLOAD_DIR
+              value: /data/shared/uploads
+            - name: TRANSCRIBER_URL
+              value: http://whisper:9000/asr
+            - name: FORMATTER_URL
+              value: http://transcript-formatter:5001/format
+            - name: EMAIL_URL
+              value: http://email-sender:5002/send
+            - name: SUPPORT_EMAIL
+              valueFrom:
+                configMapKeyRef:
+                  name: support-config
+                  key: SUPPORT_EMAIL
+            - name: DB_HOST
+              value: database
+            - name: DB_PORT
+              value: "5432"
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: support-config
+                  key: POSTGRES_DB
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: support-db-secret
+                  key: POSTGRES_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: support-db-secret
+                  key: POSTGRES_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          volumeMounts:
+            - name: shared-data
+              mountPath: /data/shared
+      volumes:
+        - name: shared-data
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: voice-app
+  labels:
+    app: voice-app
+spec:
+  selector:
+    app: voice-app
+  ports:
+    - name: http
+      port: 5000
+      targetPort: http
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: support-config
+data:
+  POSTGRES_DB: support_db
+  SUPPORT_EMAIL: support-team@example.com
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: support-db-secret
+type: Opaque
+stringData:
+  POSTGRES_USER: support
+  POSTGRES_PASSWORD: support_secret

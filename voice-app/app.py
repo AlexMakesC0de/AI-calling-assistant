@@ -167,6 +167,109 @@ def _store_form(form: dict, audio_filename: str) -> bool:
         return False
 
 
+def _get_or_create_storage_account(cur) -> int:
+    """Get a service account for storage projections, creating it if needed."""
+    storage_email = os.getenv("STORAGE_ACCOUNT_EMAIL", "voice-app-storage@local")
+    storage_password = os.getenv("STORAGE_ACCOUNT_PASSWORD", "not-for-login")
+
+    cur.execute("SELECT account_id FROM account WHERE account_email = %s", (storage_email,))
+    row = cur.fetchone()
+    if row:
+        return row[0]
+
+    cur.execute(
+        """
+        INSERT INTO account (password, account_email)
+        VALUES (%s, %s)
+        RETURNING account_id
+        """,
+        (storage_password, storage_email),
+    )
+    return cur.fetchone()[0]
+
+
+def _get_or_create_file_type(cur, extension: str) -> int:
+    """Get or create the file type ID for the uploaded audio extension."""
+    cur.execute("SELECT filetype_id FROM filetype WHERE filetypename = %s", (extension,))
+    row = cur.fetchone()
+    if row:
+        return row[0]
+
+    cur.execute(
+        """
+        INSERT INTO filetype (filetypename)
+        VALUES (%s)
+        RETURNING filetype_id
+        """,
+        (extension,),
+    )
+    return cur.fetchone()[0]
+
+
+def _store_storage_projection(
+    audio_filename: str,
+    audio_path: str,
+    transcript_text: str,
+    completed_at: str | None,
+) -> bool:
+    """Persist upload metadata and transcript into the new storage schema tables."""
+    try:
+        session_start = datetime.now(timezone.utc)
+        session_end = session_start
+        if completed_at:
+            try:
+                session_end = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+            except ValueError:
+                logger.warning("Could not parse completed_at '%s'; using current time.", completed_at)
+
+        extension = Path(audio_filename).suffix.lstrip(".").lower() or "unknown"
+        transcript_chunks = [line.strip() for line in transcript_text.splitlines() if line.strip()]
+        if not transcript_chunks and transcript_text.strip():
+            transcript_chunks = [transcript_text.strip()]
+
+        conn = _get_db_connection()
+        with conn.cursor() as cur:
+            account_id = _get_or_create_storage_account(cur)
+            file_type_id = _get_or_create_file_type(cur, extension)
+
+            cur.execute(
+                """
+                INSERT INTO recordsession (starttime, endtime, accountid)
+                VALUES (%s, %s, %s)
+                RETURNING recordingsession_id
+                """,
+                (session_start, session_end, account_id),
+            )
+            recording_session_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO file (filetypeid, fileurl, recordingsession_id)
+                VALUES (%s, %s, %s)
+                RETURNING file_id
+                """,
+                (file_type_id, audio_path, recording_session_id),
+            )
+            file_id = cur.fetchone()[0]
+
+            for idx, chunk in enumerate(transcript_chunks):
+                cur.execute(
+                    """
+                    INSERT INTO transcriptchunk (file_id, chunk_index, content)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (file_id, idx, chunk),
+                )
+
+        conn.commit()
+        conn.close()
+        logger.info("Stored upload in storage schema for file %s.", audio_filename)
+        return True
+    except Exception as exc:
+        logger.error("Failed to store upload in storage schema: %s", exc)
+        return False
+
+
 # ---------------------------------------------------------------------------
 # File validation
 # ---------------------------------------------------------------------------
@@ -405,8 +508,24 @@ def upload_audio():
     # ── Step 4: Store form in database ───────────────────────────────────
     logger.info("Step 4: Storing form in database...")
     stored = _store_form(completed_form, filename)
+    storage_projection_stored = _store_storage_projection(
+        audio_filename=filename,
+        audio_path=str(filepath),
+        transcript_text=transcript_text,
+        completed_at=completed_form.get("completed_at"),
+    )
+
+    if stored and storage_projection_stored:
+        db_status = "stored"
+    elif stored or storage_projection_stored:
+        db_status = "partial"
+    else:
+        db_status = "failed"
+
     result["pipeline"]["database"] = {
-        "status": "stored" if stored else "failed",
+        "status": db_status,
+        "incident_forms": "stored" if stored else "failed",
+        "storage_projection": "stored" if storage_projection_stored else "failed",
     }
 
     return jsonify(result), 200
