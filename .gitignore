@@ -32,3 +32,5 @@ docker-compose.override.yml
 
 # ── Environment secrets ───────────────────────────────────────────────────
 .env
+
+pgadmin_data/

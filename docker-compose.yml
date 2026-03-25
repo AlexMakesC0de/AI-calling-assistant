@@ -14,7 +14,7 @@ services:
   # -----------------------------------------------------------------------
   database:
     <<: *common
-    image: postgres:16-alpine
+    image: pgvector/pgvector:pg16
     container_name: support-db
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-support}
@@ -35,8 +35,8 @@ services:
     image: dpage/pgadmin4
     container_name: pgAdmin
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${adminEmail}
-      PGADMIN_DEFAULT_PASSWORD: ${adminpassword}
+      PGADMIN_DEFAULT_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${ADMINPASSWORD:-admin123}
     ports:
       - "8080:80"
     depends_on:
