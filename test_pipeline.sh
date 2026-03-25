@@ -40,7 +40,7 @@ echo ""
 RESPONSE=$(curl -s -X POST "${VOICE_APP_URL}/upload" \
     -F "file=@${AUDIO_FILE}")
 
-echo "$RESPONSE" | python3 -m json.tool 2>/dev/null || echo "$RESPONSE"
+echo "$RESPONSE" | python3 -c 'import sys, json; obj=json.load(sys.stdin); print(json.dumps(obj, ensure_ascii=False, indent=2))' 2>/dev/null || echo "$RESPONSE"
 echo ""
 
 # Check pipeline status
