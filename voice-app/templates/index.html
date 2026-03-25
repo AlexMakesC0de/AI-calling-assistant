@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Support Audio Analyzer</title>
+  <style>
+    :root {
+      --bg: #f6f4ef;
+      --panel: #fffdfa;
+      --text: #191713;
+      --muted: #6f665c;
+      --accent: #0f766e;
+      --danger: #b91c1c;
+      --border: #ded7cd;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      color: var(--text);
+      background: radial-gradient(circle at 15% 0%, #e8f6ef 0%, var(--bg) 50%, #efe6da 100%);
+      min-height: 100vh;
+    }
+
+    .wrap {
+      max-width: 980px;
+      margin: 0 auto;
+      padding: 28px 18px 48px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.5rem, 3vw, 2.1rem);
+      letter-spacing: 0.01em;
+    }
+
+    .lead {
+      margin: 10px 0 18px;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 10px 24px rgba(40, 32, 18, 0.08);
+    }
+
+    .card h2 {
+      margin: 0 0 10px;
+      font-size: 1.05rem;
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    input[type="file"] {
+      max-width: 100%;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 9px 10px;
+      color: var(--text);
+      background: #fff;
+      margin-top: 8px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+      color: #fff;
+      background: var(--accent);
+    }
+
+    button.ghost {
+      background: #475569;
+    }
+
+    button.warn {
+      background: var(--danger);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    audio {
+      width: 100%;
+      margin-top: 8px;
+    }
+
+    .status {
+      margin-top: 10px;
+      color: var(--muted);
+      min-height: 1.2rem;
+    }
+
+    pre {
+      background: #1f2937;
+      color: #f8fafc;
+      border-radius: 12px;
+      padding: 12px;
+      overflow: auto;
+      max-height: 380px;
+      font-size: 0.86rem;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Support Audio Analyzer</h1>
+    <p class="lead">Record in-browser or upload an existing file, then submit to the real pipeline at /upload.</p>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Caller Information (Optional Overrides)</h2>
+        <p class="lead" style="margin: 0 0 8px;">Use these when you want guaranteed field values for demo/reporting.</p>
+        <input id="callerNameInput" type="text" placeholder="Caller name (e.g. Alex Jansen)">
+        <input id="accountRefInput" type="text" placeholder="Account or reference (optional)">
+        <input id="contactInfoInput" type="text" placeholder="Contact info (email/phone)">
+      </section>
+
+      <section class="card">
+        <h2>Option A: Upload Existing Audio</h2>
+        <input id="fileInput" type="file" accept="audio/*">
+        <div class="row" style="margin-top: 10px;">
+          <button id="sendFileBtn" disabled>Send Uploaded File</button>
+        </div>
+        <div class="status" id="uploadStatus"></div>
+      </section>
+
+      <section class="card">
+        <h2>Option B: Record Audio</h2>
+        <div class="row">
+          <button id="startRecBtn">Start Recording</button>
+          <button id="stopRecBtn" class="warn" disabled>Stop</button>
+          <button id="sendRecBtn" class="ghost" disabled>Send Recording</button>
+        </div>
+        <audio id="preview" controls></audio>
+        <div class="status" id="recordStatus"></div>
+      </section>
+    </div>
+
+    <section class="card" style="margin-top: 16px;">
+      <h2>Pipeline Response</h2>
+      <pre id="responseBox">No request sent yet.</pre>
+    </section>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const sendFileBtn = document.getElementById('sendFileBtn');
+    const uploadStatus = document.getElementById('uploadStatus');
+
+    const startRecBtn = document.getElementById('startRecBtn');
+    const stopRecBtn = document.getElementById('stopRecBtn');
+    const sendRecBtn = document.getElementById('sendRecBtn');
+    const preview = document.getElementById('preview');
+    const recordStatus = document.getElementById('recordStatus');
+
+    const responseBox = document.getElementById('responseBox');
+    const callerNameInput = document.getElementById('callerNameInput');
+    const accountRefInput = document.getElementById('accountRefInput');
+    const contactInfoInput = document.getElementById('contactInfoInput');
+
+    let mediaRecorder = null;
+    let chunks = [];
+    let recordedBlob = null;
+
+    function showResponse(payload) {
+      responseBox.textContent = JSON.stringify(payload, null, 2);
+    }
+
+    async function sendToPipeline(fileLike, filename) {
+      const formData = new FormData();
+      formData.append('file', fileLike, filename);
+
+      const callerName = callerNameInput.value.trim();
+      const accountRef = accountRefInput.value.trim();
+      const contactInfo = contactInfoInput.value.trim();
+
+      if (callerName) formData.append('caller_name', callerName);
+      if (accountRef) formData.append('account_or_reference', accountRef);
+      if (contactInfo) formData.append('contact_info', contactInfo);
+
+      const res = await fetch('/upload', { method: 'POST', body: formData });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (_err) {
+        data = { error: 'Non-JSON response from /upload' };
+      }
+      showResponse(data);
+      return { ok: res.ok, data };
+    }
+
+    fileInput.addEventListener('change', () => {
+      sendFileBtn.disabled = !(fileInput.files && fileInput.files.length > 0);
+      uploadStatus.textContent = '';
+    });
+
+    sendFileBtn.addEventListener('click', async () => {
+      if (!fileInput.files || fileInput.files.length === 0) {
+        uploadStatus.textContent = 'Choose a file first.';
+        return;
+      }
+
+      const file = fileInput.files[0];
+      uploadStatus.textContent = 'Sending uploaded file to pipeline...';
+      sendFileBtn.disabled = true;
+
+      try {
+        const result = await sendToPipeline(file, file.name);
+        uploadStatus.textContent = result.ok ? 'Upload processed successfully.' : 'Pipeline returned an error. Check response.';
+      } catch (err) {
+        uploadStatus.textContent = `Request failed: ${err.message}`;
+      } finally {
+        sendFileBtn.disabled = false;
+      }
+    });
+
+    startRecBtn.addEventListener('click', async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        chunks = [];
+        recordedBlob = null;
+
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) chunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = () => {
+          recordedBlob = new Blob(chunks, { type: 'audio/webm' });
+          preview.src = URL.createObjectURL(recordedBlob);
+          sendRecBtn.disabled = false;
+          recordStatus.textContent = 'Recording captured. Click Send Recording.';
+          stream.getTracks().forEach(track => track.stop());
+        };
+
+        mediaRecorder.start();
+        startRecBtn.disabled = true;
+        stopRecBtn.disabled = false;
+        sendRecBtn.disabled = true;
+        recordStatus.textContent = 'Recording... click Stop when done.';
+      } catch (err) {
+        recordStatus.textContent = `Could not access microphone: ${err.message}`;
+      }
+    });
+
+    stopRecBtn.addEventListener('click', () => {
+      if (!mediaRecorder) return;
+      mediaRecorder.stop();
+      stopRecBtn.disabled = true;
+      startRecBtn.disabled = false;
+    });
+
+    sendRecBtn.addEventListener('click', async () => {
+      if (!recordedBlob) {
+        recordStatus.textContent = 'No recording available.';
+        return;
+      }
+
+      sendRecBtn.disabled = true;
+      recordStatus.textContent = 'Sending recording to pipeline...';
+
+      try {
+        const result = await sendToPipeline(recordedBlob, 'browser_recording.webm');
+        recordStatus.textContent = result.ok ? 'Recording processed successfully.' : 'Pipeline returned an error. Check response.';
+      } catch (err) {
+        recordStatus.textContent = `Request failed: ${err.message}`;
+      } finally {
+        sendRecBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

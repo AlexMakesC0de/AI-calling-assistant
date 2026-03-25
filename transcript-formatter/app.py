@@ -13,6 +13,7 @@ It also rates its confidence for each field it fills.
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -128,6 +129,57 @@ _SCORED_FIELDS = [
     "follow_up_required", "follow_up_actions", "follow_up_department",
     "customer_sentiment", "call_summary",
 ]
+
+
+def _extract_caller_name_from_transcript(transcript: str) -> str | None:
+    """Extract caller name from common self-introduction phrases."""
+    patterns = [
+        r"\bmy name is\s+([a-z][a-z\-']+(?:\s+[a-z][a-z\-']+)?)",
+        r"\bthis is\s+([a-z][a-z\-']+(?:\s+[a-z][a-z\-']+)?)",
+        r"\bi am\s+([a-z][a-z\-']+(?:\s+[a-z][a-z\-']+)?)",
+        r"\bi'm\s+([a-z][a-z\-']+(?:\s+[a-z][a-z\-']+)?)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, transcript, flags=re.IGNORECASE)
+        if match:
+            return match.group(1).strip().title()
+    return None
+
+
+def _build_summary_from_transcript(transcript: str) -> str:
+    """Build a short fallback summary from transcript sentences."""
+    clean = transcript.strip()
+    if not clean:
+        return "No summary available."
+    sentences = re.split(r"(?<=[.!?])\s+", clean)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    if not sentences:
+        return clean[:320]
+    return " ".join(sentences[:3])[:480]
+
+
+def _apply_transcript_heuristics(ai_fields: dict, transcript: str) -> dict:
+    """Backfill required fields from transcript when LLM output is weak."""
+    merged = dict(ai_fields)
+
+    caller_name = str(merged.get("caller_name", "")).strip()
+    if not caller_name or caller_name.lower() == "not mentioned":
+        extracted_name = _extract_caller_name_from_transcript(transcript)
+        if extracted_name:
+            merged["caller_name"] = extracted_name
+            merged["caller_name_confidence"] = "high"
+
+    call_summary = str(merged.get("call_summary", "")).strip()
+    if not call_summary or call_summary.lower() == "not mentioned":
+        merged["call_summary"] = _build_summary_from_transcript(transcript)
+        merged["call_summary_confidence"] = "medium"
+
+    issue_description = str(merged.get("issue_description", "")).strip()
+    if not issue_description or issue_description.lower() == "not mentioned":
+        merged["issue_description"] = _build_summary_from_transcript(transcript)
+        merged["issue_description_confidence"] = "medium"
+
+    return merged
 
 
 def _extract_confidence(ai_fields: dict) -> dict:
@@ -258,6 +310,18 @@ def build_incident_form(data: dict) -> dict:
 
     # AI reads the transcript and fills out all form fields
     ai_fields = _ai_fill_form(transcript_text)
+    ai_fields = _apply_transcript_heuristics(ai_fields, transcript_text)
+
+    metadata = data.get("metadata", {}) or {}
+    overrides = {
+        "caller_name": metadata.get("caller_name") or metadata.get("name"),
+        "account_or_reference": metadata.get("account_or_reference") or metadata.get("account"),
+        "contact_info": metadata.get("contact_info") or metadata.get("contact"),
+    }
+    for field, value in overrides.items():
+        if isinstance(value, str) and value.strip():
+            ai_fields[field] = value.strip()
+            ai_fields[f"{field}_confidence"] = "high"
 
     # Extract confidence ratings
     confidence = _extract_confidence(ai_fields)
