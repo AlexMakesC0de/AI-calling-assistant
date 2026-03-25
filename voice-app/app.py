@@ -21,7 +21,7 @@ import magic
 import psycopg2
 import psycopg2.extras
 import requests
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 from tenacity import (
     retry,
     stop_after_attempt,
@@ -38,7 +38,11 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 
 UPLOAD_DIR = Path(os.getenv("UPLOAD_DIR", "/data/shared/uploads"))
-WHISPER_URL = os.getenv("WHISPER_URL", "http://whisper:9000/asr")
+# Prefer TRANSCRIBER_URL used by current compose setup; keep WHISPER_URL for compatibility.
+WHISPER_URL = os.getenv(
+    "TRANSCRIBER_URL",
+    os.getenv("WHISPER_URL", "http://localhost:9000/transcribe"),
+)
 FORMATTER_URL = os.getenv("FORMATTER_URL", "http://localhost:5001/format")
 EMAIL_URL = os.getenv("EMAIL_URL", "http://email-sender:5002/send")
 SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "support-team@example.com")
@@ -53,6 +57,7 @@ ALLOWED_MIME_TYPES = {
     "audio/ogg", "audio/flac",
     "audio/mp4", "audio/m4a", "audio/x-m4a",
     "audio/webm",
+    "video/webm",
 }
 
 # Database settings
@@ -220,9 +225,16 @@ def _transcribe(filepath: Path) -> dict:
     Retries up to 3 times on connection errors / timeouts.
     """
     with open(filepath, "rb") as f:
-        files = {"audio_file": (filepath.name, f, "audio/wav")}
-        params = {"task": "transcribe", "output": "json"}
-        resp = requests.post(WHISPER_URL, files=files, params=params, timeout=300)
+        # Support both API shapes:
+        # - openai-whisper-webservice: POST /asr with field audio_file + task/output params
+        # - custom transcriber: POST /transcribe with field file
+        if WHISPER_URL.rstrip("/").endswith("/asr"):
+            files = {"audio_file": (filepath.name, f, "audio/wav")}
+            params = {"task": "transcribe", "output": "json"}
+            resp = requests.post(WHISPER_URL, files=files, params=params, timeout=300)
+        else:
+            files = {"file": (filepath.name, f, "audio/wav")}
+            resp = requests.post(WHISPER_URL, files=files, timeout=300)
     resp.raise_for_status()
     return resp.json()
 
@@ -234,14 +246,14 @@ def _transcribe(filepath: Path) -> dict:
     before_sleep=before_sleep_log(logger, logging.WARNING),
     reraise=True,
 )
-def _call_formatter(transcript_text: str) -> dict:
+def _call_formatter(transcript_text: str, metadata: dict | None = None) -> dict:
     """Send the transcript to the AI formatter and return the completed form.
 
     Retries up to 3 times on connection errors / timeouts.
     """
     resp = requests.post(
         FORMATTER_URL,
-        json={"transcript": transcript_text},
+        json={"transcript": transcript_text, "metadata": metadata or {}},
         timeout=180,
     )
     resp.raise_for_status()
@@ -274,6 +286,12 @@ def _send_email(payload: dict) -> dict:
 def health():
     """Liveness / readiness probe."""
     return jsonify({"status": "ok"}), 200
+
+
+@app.route("/", methods=["GET"])
+def index():
+    """UI for recording/uploading audio and submitting to the real pipeline."""
+    return render_template("index.html")
 
 
 @app.route("/upload", methods=["POST"])
@@ -318,6 +336,13 @@ def upload_audio():
         "pipeline": {},
     }
 
+    caller_metadata = {
+        "caller_name": request.form.get("caller_name", "").strip(),
+        "account_or_reference": request.form.get("account_or_reference", "").strip(),
+        "contact_info": request.form.get("contact_info", "").strip(),
+    }
+    caller_metadata = {k: v for k, v in caller_metadata.items() if v}
+
     # ── Step 1: Transcribe via Whisper ────────────────────────────────────
     logger.info("Step 1: Transcribing %s via Whisper...", filename)
     try:
@@ -343,7 +368,7 @@ def upload_audio():
     # ── Step 2: AI fills out the incident form ───────────────────────────
     logger.info("Step 2: Sending transcript to AI formatter...")
     try:
-        completed_form = _call_formatter(transcript_text)
+        completed_form = _call_formatter(transcript_text, metadata=caller_metadata)
         result["pipeline"]["incident_form"] = {
             "status": "completed",
             "form_id": completed_form.get("form_id"),
