@@ -10,8 +10,8 @@
 #
 # What it does:
 #   Uploads the audio file to the voice-app, which automatically:
-#     1. Transcribes it via Whisper (speech-to-text)
-#     2. Sends the transcript to the AI formatter (fills out incident form)
+#     1. Transcribes it with speaker diarization (identifies who said what)
+#     2. Sends the diarized transcript to the AI formatter (fills out incident form)
 #     3. Emails the completed form to the support team
 #
 #   After running, check Mailpit at http://localhost:8025 to see the email.
@@ -32,7 +32,7 @@ echo "============================================"
 echo ""
 echo "📤 Uploading '$AUDIO_FILE'..."
 echo "   The pipeline will run automatically:"
-echo "     1. Transcribe (Whisper)"
+echo "     1. Transcribe + diarize speakers"
 echo "     2. Fill incident form (AI)"
 echo "     3. Email support team"
 echo ""

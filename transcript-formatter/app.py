@@ -66,7 +66,17 @@ format_request_schema = FormatRequestSchema()
 
 _FORM_FILL_PROMPT = """\
 You are an experienced customer-support analyst. You have just received a \
-transcript of a support call. Your job is to read through the conversation \
+transcript of a support call. The transcript uses speaker diarization — each \
+line is prefixed with a speaker label such as "Speaker 1:" or "Speaker 2:". \
+In most calls, the person who speaks first is the support agent (they greet \
+the caller), and the other speaker is the customer/caller. Use these labels \
+to accurately identify who said what.
+
+The transcript may be in English, Dutch, or another language. If needed, \
+translate internally while extracting data, but keep the final JSON values in \
+clear English (except proper names, product names, and exact error text).
+
+Your job is to read through the conversation \
 and fill out the incident form below by extracting the relevant information \
 from the transcript.
 
