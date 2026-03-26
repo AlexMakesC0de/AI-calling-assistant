@@ -5,6 +5,7 @@ Local-first support-call pipeline with Docker Compose:
 - Extract structured incident fields (local Ollama via formatter)
 - Send notification email
 - Store completed forms in PostgreSQL
+- Accept telephony recording webhooks and forward them into the same pipeline
 
 This repo now supports both:
 - Browser UI demo flow at `http://localhost:5000`
@@ -38,6 +39,7 @@ Mailpit (`:8025`) is included in `dev` profile for local email inbox preview.
 | `database` | `support-db` | 5432 | Incident form persistence |
 | `n8n` | `support-n8n` | 5678 | Optional workflow orchestration |
 | `voice-app` | `support-voice-app` | 5000 | UI + `/upload` API |
+| `telephony-ingest` | `support-telephony-ingest` | 5010 | Recording webhook adapter (`/webhooks/recording-complete`) |
 | `transcriber` | `support-transcriber` | 9000 | Whisper ASR endpoint |
 | `transcript-formatter` | `support-transcript-formatter` | 5001 | Local AI form filling |
 | `email-sender` | `support-email-sender` | 5002 | SMTP dispatch |
@@ -145,6 +147,27 @@ curl.exe -sS -X POST http://localhost:5000/upload `
 curl -sS http://localhost:5000/forms | python3 -m json.tool
 ```
 
+### Telephony recording webhook (new)
+
+`POST /webhooks/recording-complete` on `telephony-ingest` (`http://localhost:5010`)
+
+Payload supports:
+- `recording_url` (service downloads audio) or
+- `recording_path` (local/shared path already available to container)
+
+Local smoke test with shared sample audio:
+
+```bash
+chmod +x test_telephony_ingest.sh
+./test_telephony_ingest.sh
+```
+
+You can inspect example payload shape:
+
+```bash
+curl -sS http://localhost:5010/webhooks/example-payload | python3 -m json.tool
+```
+
 ## Configuration
 
 Important variables from `.env`:
@@ -202,3 +225,23 @@ docker compose --profile dev down -v
 ## Additional Test Guide
 
 See [TESTING.md](TESTING.md) for detailed validation scenarios.
+
+## Telephony Build Plan
+
+See [TELEPHONY_SETUP.md](TELEPHONY_SETUP.md) for team work split, webhook contract, and provider rollout checklist.
+
+## Manual Actions Needed From You
+
+These cannot be automated from this repo and should be completed by your team:
+
+1. Choose EU telephony stack and host location (for privacy/residency).
+2. Provision PBX/provider account and port both numbers (personal + work).
+3. Configure inbound routing so both answered and unanswered calls are recorded.
+4. Configure recording-complete webhook target to:
+        - `POST https://<your-domain>/webhooks/recording-complete`
+        - Header: `X-Telephony-Token: <TELEPHONY_WEBHOOK_TOKEN>`
+5. Set `.env` secrets:
+        - `TELEPHONY_WEBHOOK_TOKEN`
+        - Optional `RECORDING_AUTH_HEADER` and `RECORDING_AUTH_VALUE` if recording URL requires auth
+6. Ensure public HTTPS ingress/reverse-proxy for `telephony-ingest` in production.
+7. Validate retention/compliance policy for call recordings and transcripts.
