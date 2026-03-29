@@ -1,0 +1,58 @@
+services:
+  pbx-db:
+    image: mariadb:10.11
+    container_name: support-pbx-db
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${PBX_DB_ROOT_PASSWORD:-pbx_root_change_me}
+      MARIADB_DATABASE: ${PBX_DB_NAME:-asterisk}
+      MARIADB_USER: ${PBX_DB_USER:-asterisk}
+      MARIADB_PASSWORD: ${PBX_DB_PASSWORD:-asterisk_change_me}
+    volumes:
+      - pbx_db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p${PBX_DB_ROOT_PASSWORD:-pbx_root_change_me} || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  freepbx:
+    image: tiredofit/freepbx:latest
+    container_name: support-freepbx
+    restart: unless-stopped
+    depends_on:
+      pbx-db:
+        condition: service_healthy
+    environment:
+      DB_EMBEDDED: "FALSE"
+      DB_HOST: pbx-db
+      DB_NAME: ${PBX_DB_NAME:-asterisk}
+      DB_USER: ${PBX_DB_USER:-asterisk}
+      DB_PASS: ${PBX_DB_PASSWORD:-asterisk_change_me}
+      RTP_START: ${PBX_RTP_START:-10000}
+      RTP_FINISH: ${PBX_RTP_FINISH:-10050}
+      ENABLE_FAIL2BAN: "FALSE"
+      TZ: ${TZ:-Europe/Amsterdam}
+    ports:
+      - "${PBX_HTTP_PORT:-8088}:80"
+      - "${PBX_HTTPS_PORT:-8443}:443"
+      - "${PBX_SIP_PORT:-5060}:5060/udp"
+      - "${PBX_PJSIP_PORT:-5160}:5160/udp"
+      - "${PBX_RTP_START:-10000}-${PBX_RTP_FINISH:-10050}:${PBX_RTP_START:-10000}-${PBX_RTP_FINISH:-10050}/udp"
+    volumes:
+      - pbx_data:/data
+      - pbx_logs:/var/log
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 20m
+
+volumes:
+  pbx_db_data:
+    driver: local
+  pbx_data:
+    driver: local
+  pbx_logs:
+    driver: local
