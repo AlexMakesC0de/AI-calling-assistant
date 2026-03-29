@@ -114,7 +114,38 @@ services:
         condition: service_healthy
 
   # -----------------------------------------------------------------------
-  # 4. Transcriber – Whisper STT + Speaker Diarization
+  # 4. Telephony Ingest – receives PBX/provider recording events
+  #    and forwards audio into the existing voice-app /upload pipeline.
+  # -----------------------------------------------------------------------
+  telephony-ingest:
+    restart: unless-stopped
+    build:
+      context: ./telephony-ingest
+      dockerfile: Dockerfile
+    container_name: support-telephony-ingest
+    network_mode: host
+    environment:
+      VOICE_APP_UPLOAD_URL: ${VOICE_APP_UPLOAD_URL:-http://localhost:5000/upload}
+      TELEPHONY_WEBHOOK_TOKEN: ${TELEPHONY_WEBHOOK_TOKEN:-}
+      TELEPHONY_EVENTS_DIR: /data/shared/telephony-events
+      TELEPHONY_TMP_DIR: /tmp/telephony
+      RECORDING_DOWNLOAD_TIMEOUT: ${RECORDING_DOWNLOAD_TIMEOUT:-120}
+      VOICE_APP_FORWARD_TIMEOUT: ${VOICE_APP_FORWARD_TIMEOUT:-900}
+      RECORDING_AUTH_HEADER: ${RECORDING_AUTH_HEADER:-}
+      RECORDING_AUTH_VALUE: ${RECORDING_AUTH_VALUE:-}
+    volumes:
+      - shared_data:/data/shared
+    depends_on:
+      voice-app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5010/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # -----------------------------------------------------------------------
+  # 5. Transcriber – Whisper STT + Speaker Diarization
   #    Uses faster-whisper for word-level timestamps and speechbrain
   #    ECAPA-TDNN embeddings with spectral clustering for diarization.
   # -----------------------------------------------------------------------
@@ -138,7 +169,7 @@ services:
       start_period: 120s
 
   # -----------------------------------------------------------------------
-  # 5. Transcript Formatter – custom Flask API (raw text → report JSON)
+  # 6. Transcript Formatter – custom Flask API (raw text → report JSON)
   #    Uses network_mode: host to access the local Ollama LLM on localhost
   # -----------------------------------------------------------------------
   transcript-formatter:
@@ -162,7 +193,7 @@ services:
       retries: 3
 
   # -----------------------------------------------------------------------
-  # 6. Email Sender – lightweight Python SMTP service
+  # 7. Email Sender – lightweight Python SMTP service
   # -----------------------------------------------------------------------
   email-sender:
     <<: *common
@@ -188,7 +219,7 @@ services:
       retries: 3
 
   # -----------------------------------------------------------------------
-  # 7. Mailpit – local SMTP catch-all with web UI (dev/test only)
+  # 8. Mailpit – local SMTP catch-all with web UI (dev/test only)
   # -----------------------------------------------------------------------
   mailpit:
     <<: *common
