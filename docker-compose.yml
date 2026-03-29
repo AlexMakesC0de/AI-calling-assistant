@@ -88,14 +88,17 @@ services:
       dockerfile: Dockerfile
     container_name: support-voice-app
     restart: unless-stopped
-    network_mode: host
+    networks:
+      - app-network
+    ports:
+      - "5000:5000"
     environment:
       UPLOAD_DIR: /data/shared/uploads
-      TRANSCRIBER_URL: http://localhost:9000/asr
-      FORMATTER_URL: http://localhost:5001/format
-      EMAIL_URL: http://localhost:5002/send
+      TRANSCRIBER_URL: http://transcriber:9000/asr
+      FORMATTER_URL: http://transcript-formatter:5001/format
+      EMAIL_URL: http://email-sender:5002/send
       SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support-team@example.com}
-      DB_HOST: localhost
+      DB_HOST: database
       DB_PORT: 5432
       DB_NAME: ${POSTGRES_DB:-support_db}
       DB_USER: ${POSTGRES_USER:-support}
@@ -123,9 +126,12 @@ services:
       context: ./telephony-ingest
       dockerfile: Dockerfile
     container_name: support-telephony-ingest
-    network_mode: host
+    networks:
+      - app-network
+    ports:
+      - "5010:5010"
     environment:
-      VOICE_APP_UPLOAD_URL: ${VOICE_APP_UPLOAD_URL:-http://localhost:5000/upload}
+      VOICE_APP_UPLOAD_URL: ${VOICE_APP_UPLOAD_URL:-http://voice-app:5000/upload}
       TELEPHONY_WEBHOOK_TOKEN: ${TELEPHONY_WEBHOOK_TOKEN:-}
       TELEPHONY_EVENTS_DIR: /data/shared/telephony-events
       TELEPHONY_TMP_DIR: /tmp/telephony
@@ -178,10 +184,15 @@ services:
       dockerfile: Dockerfile
     container_name: support-transcript-formatter
     restart: unless-stopped
-    network_mode: host
+    networks:
+      - app-network
+    ports:
+      - "5001:5001"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       TEMPLATE_DIR: /data/shared/templates
-      OLLAMA_URL: http://localhost:11434
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
     volumes:
       - shared_data:/data/shared
