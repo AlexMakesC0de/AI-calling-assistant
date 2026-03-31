@@ -14,12 +14,12 @@ CREATE TABLE IF NOT EXISTS recordSession (
     FOREIGN KEY (AccountId) REFERENCES Account(account_id)
 );
 
-CREATE TABLE FileType (
+CREATE TABLE IF NOT EXISTS fileType (
     fileType_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     fileTypeName VARCHAR(50) NOT NULL UNIQUE
 );
 
-CREATE TABLE File (
+CREATE TABLE IF NOT EXISTS file (
     file_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     fileTypeId INT NOT NULL REFERENCES FileType(fileType_id),
     fileUrl TEXT NOT NULL,
@@ -29,7 +29,7 @@ CREATE TABLE File (
 );
 
 
-CREATE TABLE TranscriptChunk (
+CREATE TABLE IF NOT EXISTS TranscriptChunk (
     id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     file_id INT NOT NULL,
     chunk_index INT NOT NULL,

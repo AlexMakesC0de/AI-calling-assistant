@@ -20,11 +20,15 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-support}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-support_secret}
       POSTGRES_DB: ${POSTGRES_DB:-support_db}
+      POSTGRES_N8N_USER: ${POSTGRES_N8N_USER:-n8n_user}
+      POSTGRES_N8N_PASSWORD: ${POSTGRES_N8N_PASSWORD:-n8n}
+      POSTGRES_N8N_DB: ${POSTGRES_N8N_DB:-n8n_db}
     ports:
       - "5432:5432"
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - ./local-storage/postgres-data:/var/lib/postgresql/data
       - ./database/initDb:/docker-entrypoint-initdb.d
+      - ./local-storage/bucket:/bucket
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-support} -d ${POSTGRES_DB:-support_db}"]
       interval: 10s
@@ -34,6 +38,8 @@ services:
   pgAdmin:
     image: dpage/pgadmin4
     container_name: pgAdmin
+    networks:
+      - app-network
     environment:
       PGADMIN_DEFAULT_EMAIL: ${ADMIN_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${ADMINPASSWORD:-admin123}
@@ -43,7 +49,8 @@ services:
       database:
         condition: service_healthy
     volumes:
-      - ./pgadmin_data:/var/lib/pgadmin
+      - ./local-storage/pgadmin-data:/var/lib/pgadmin
+      - ./database/initDb/servers.json:/pgadmin4/servers.json:ro
 
 
   # -----------------------------------------------------------------------
@@ -57,9 +64,9 @@ services:
       DB_TYPE: postgresdb
       DB_POSTGRESDB_HOST: database
       DB_POSTGRESDB_PORT: 5432
-      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB:-support_db}
-      DB_POSTGRESDB_USER: ${POSTGRES_USER:-support}
-      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:-support_secret}
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_N8N_DB:-n8n_db}
+      DB_POSTGRESDB_USER: ${POSTGRES_N8N_USER:-n8n_user}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_N8N_PASSWORD:-n8n}
       N8N_BASIC_AUTH_ACTIVE: "true"
       N8N_BASIC_AUTH_USER: ${N8N_USER:-admin}
       N8N_BASIC_AUTH_PASSWORD: ${N8N_PASSWORD:-admin}
@@ -69,8 +76,8 @@ services:
     ports:
       - "5678:5678"
     volumes:
-      - n8n_data:/home/node/.n8n
-      - shared_data:/data/shared
+      - ./local-storage/n8n-data:/home/node/.n8n
+      - ./local-storage/shared:/data/shared
     depends_on:
       database:
         condition: service_healthy
@@ -104,7 +111,7 @@ services:
       DB_USER: ${POSTGRES_USER:-support}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-support_secret}
     volumes:
-      - shared_data:/data/shared
+      - ./local-storage/shared:/data/shared
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5000/health || exit 1"]
       interval: 15s
@@ -140,7 +147,7 @@ services:
       RECORDING_AUTH_HEADER: ${RECORDING_AUTH_HEADER:-}
       RECORDING_AUTH_VALUE: ${RECORDING_AUTH_VALUE:-}
     volumes:
-      - shared_data:/data/shared
+      - ./local-storage/shared:/data/shared
     depends_on:
       voice-app:
         condition: service_healthy
@@ -165,8 +172,8 @@ services:
     ports:
       - "9000:9000"
     volumes:
-      - shared_data:/data/shared
-      - whisper_models:/models
+      - ./local-storage/shared:/data/shared
+      - ./local-storage/whisper-models:/models
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9000/docs || exit 1"]
       interval: 30s
@@ -195,7 +202,7 @@ services:
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
     volumes:
-      - shared_data:/data/shared
+      - ./local-storage/shared:/data/shared
       - ./templates:/data/shared/templates:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5001/health || exit 1"]
@@ -222,7 +229,7 @@ services:
     ports:
       - "5002:5002"
     volumes:
-      - shared_data:/data/shared
+      - ./local-storage/shared:/data/shared
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5002/health || exit 1"]
       interval: 15s
@@ -246,19 +253,6 @@ services:
       retries: 3
     profiles:
       - dev
-
-# ---------------------------------------------------------------------------
-# Volumes
-# ---------------------------------------------------------------------------
-volumes:
-  pg_data:
-    driver: local
-  n8n_data:
-    driver: local
-  shared_data:
-    driver: local
-  whisper_models:
-    driver: local
 
 # ---------------------------------------------------------------------------
 # Networks
