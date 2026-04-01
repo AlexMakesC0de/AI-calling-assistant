@@ -33,15 +33,22 @@ You will validate:
 Linux/macOS:
 
 ```bash
-docker compose --profile dev up -d --build
+chmod +x scripts/start-stack-auto.sh
+./scripts/start-stack-auto.sh
 docker compose ps
 ```
 
 Windows PowerShell:
 
 ```powershell
-docker compose --profile dev up -d --build
+./scripts/start-stack-auto.ps1
 docker compose ps
+```
+
+Manual fallback (CPU mode):
+
+```bash
+docker compose --profile dev up -d --build
 ```
 
 Expected:
@@ -237,7 +244,8 @@ Windows:
     - Wait longer on first boot.
 
 3. Generic AI output:
-    - Verify Ollama endpoint (`http://localhost:11434/api/tags`).
+      - Verify Ollama is running and model is available:
+         `docker exec support-ollama ollama list`
     - Check formatter logs.
 
 4. Missing emails:

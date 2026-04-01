@@ -70,6 +70,13 @@ class VoiceRecordingApp:
                     "account_or_reference", ""
                 ).strip(),
                 "contact_info": request.form.get("contact_info", "").strip(),
+                "term_filter_mode": request.form.get("term_filter_mode", "").strip(),
+                "term_filter_custom_words": request.form.get(
+                    "term_filter_custom_words", ""
+                ).strip(),
+                "term_filter_replacement": request.form.get(
+                    "term_filter_replacement", ""
+                ).strip(),
             }
             caller_metadata = {k: v for k, v in caller_metadata.items() if v}
 
