@@ -154,13 +154,15 @@ class VoiceRecordingApp:
                 result["pipeline"]["email"] = {"status": "failed", "error": str(exc)}
 
             logger.info("Step 4: Storing form in database...")
-            stored = self._db.store_form(completed_form, filename)
-            storage_projection_stored = self._db.store_storage_projection(
+            storage_result = self._db.store_upload_with_form(
+                form=completed_form,
                 audio_filename=filename,
                 audio_path=str(filepath),
                 transcript_text=transcript_text,
                 completed_at=completed_form.get("completed_at"),
             )
+            storage_projection_stored = storage_result is not None
+            stored = bool(storage_result and storage_result.get("incident_form_stored"))
 
             if stored and storage_projection_stored:
                 db_status = "stored"

@@ -66,7 +66,7 @@ services:
       database:
         condition: service_healthy
     volumes:
-      - ./local-storage/pgadmin-data:/var/lib/pgadmin
+      - pgadmin-data:/var/lib/pgadmin
       - ./database/initDb/servers.json:/pgadmin4/servers.json:ro
 
 
@@ -284,3 +284,6 @@ services:
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  pgadmin-data:
