@@ -58,22 +58,8 @@ Mailpit (`:8025`) is available in `dev` profile for local inbox preview.
 ## Prerequisites
 
 - Docker Desktop (Windows/macOS) or Docker Engine + Compose plugin (Linux).
-- Ollama installed on host and reachable at `http://localhost:11434`.
-- One pulled Ollama model (default `llama3.1:8b`).
-
-Install Ollama on Linux/macOS:
-
-```bash
-curl -fsSL https://ollama.com/install.sh | sh
-ollama pull llama3.1:8b
-```
-
-Install Ollama on Windows (PowerShell):
-
-```powershell
-winget install Ollama.Ollama
-ollama pull llama3.1:8b
-```
+- Enough disk space for Ollama models (default `llama3.1:8b`).
+- Default stack runs on CPU and works cross-platform (Linux/macOS/Windows).
 
 ## Start From Scratch
 
@@ -86,16 +72,103 @@ Linux/macOS:
 
 ```bash
 cp .env.example .env
-docker compose --profile dev up -d --build
+chmod +x scripts/start-stack-auto.sh
+./scripts/start-stack-auto.sh
 docker compose ps
 ```
+
+The `start-stack-auto.sh` script detects GPU viability and automatically chooses
+GPU mode (with `docker-compose.gpu.yml`) or CPU mode.
+
+Optional script flags:
+- `./scripts/start-stack-auto.sh --dry-run`
+- `./scripts/start-stack-auto.sh --min-gpu-vram-gb 10`
+
+Optional NVIDIA GPU acceleration (Linux and Windows with Docker GPU support enabled):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile dev up -d --build
+```
+
+If this command fails with `could not select device driver \"nvidia\"`, your Docker
+engine does not currently expose GPU support. Use CPU mode with the default command:
+
+```bash
+docker compose --profile dev up -d --build
+```
+
+Windows requirements for GPU mode:
+- Docker Desktop using WSL2 backend.
+- Latest NVIDIA GPU driver installed on host.
+- WSL GPU support available (`wsl --update`).
+
+Linux requirements for GPU mode:
+- NVIDIA driver installed on host.
+- NVIDIA Container Toolkit installed and configured for Docker.
+
+GPU preflight checks before using `docker-compose.gpu.yml`:
+
+Linux:
+
+```bash
+nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
+```
+
+Windows PowerShell (Docker Desktop + WSL2 backend):
+
+```powershell
+nvidia-smi
+docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi
+```
+
+If either Docker GPU check fails, keep using CPU mode.
+
+Note on `buildx` warning:
+- `Docker Compose requires buildx plugin to be installed` is a warning only.
+- Compose falls back to the classic builder and your images still build.
 
 Windows PowerShell:
 
 ```powershell
 Copy-Item .env.example .env
-docker compose --profile dev up -d --build
+./scripts/start-stack-auto.ps1
 docker compose ps
+```
+
+The `start-stack-auto.ps1` script provides the same automatic mode selection for
+Windows hosts.
+
+Optional script flags:
+- `./scripts/start-stack-auto.ps1 -DryRun`
+- `./scripts/start-stack-auto.ps1 -MinGpuVramGb 10`
+
+Manual mode selection (if you do not want auto-detection):
+
+CPU mode:
+
+```bash
+docker compose --profile dev up -d --build
+```
+
+GPU mode:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile dev up -d --build
+```
+
+5. Pull the Ollama model into the Ollama container (one-time per machine):
+
+Linux/macOS:
+
+```bash
+docker exec -it support-ollama ollama pull llama3.1:8b
+```
+
+Windows PowerShell:
+
+```powershell
+docker exec -it support-ollama ollama pull llama3.1:8b
 ```
 
 Expected minimum status before testing:
@@ -134,16 +207,21 @@ docker logs --tail 200 support-voice-app
 Linux/macOS:
 
 ```bash
-curl -sS http://localhost:11434/api/tags
+docker exec -it support-ollama ollama list
 ```
 
 Windows PowerShell:
 
 ```powershell
-curl.exe -sS http://localhost:11434/api/tags
+docker exec -it support-ollama ollama list
+```
+4. If model is missing, pull it:
+
+```bash
+docker exec -it support-ollama ollama pull llama3.1:8b
 ```
 
-4. Rebuild if needed:
+5. Rebuild if needed:
 
 Linux/macOS:
 

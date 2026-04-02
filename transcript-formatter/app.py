@@ -33,6 +33,20 @@ app.config["TEMPLATE_DIR"] = os.getenv("TEMPLATE_DIR", "/data/shared/templates")
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+OLLAMA_CONNECT_TIMEOUT = float(os.getenv("OLLAMA_CONNECT_TIMEOUT", "3"))
+OLLAMA_READ_TIMEOUT = float(os.getenv("OLLAMA_READ_TIMEOUT", "60"))
+TERM_FILTER_MODE = os.getenv("TERM_FILTER_MODE", "basic").strip().lower()
+TERM_FILTER_CUSTOM_WORDS = os.getenv("TERM_FILTER_CUSTOM_WORDS", "")
+TERM_FILTER_REPLACEMENT = os.getenv("TERM_FILTER_REPLACEMENT", "[redacted]")
+
+_BASIC_FILTER_TERMS = {
+    "nigger",
+    "nigga",
+    "faggot",
+    "retard",
+    "whore",
+    "slut",
+}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -158,6 +172,72 @@ _ACTION_HINT_PATTERNS = [
     r"\b(escalat(ed|e)|open(ed)?\s+(a\s+)?(ticket|case)|creat(ed)?\s+(a\s+)?(ticket|case))\b",
     r"\b(test(ed|ing)?|collect(ed)?|updat(ed|ing)?|provid(ed|ing)?)\b",
 ]
+
+
+def _parse_custom_terms(raw: str) -> set[str]:
+    terms = set()
+    for part in raw.split(","):
+        term = part.strip().lower()
+        if term:
+            terms.add(term)
+    return terms
+
+
+def _effective_filter_mode(metadata: dict) -> str:
+    value = str(metadata.get("term_filter_mode") or TERM_FILTER_MODE or "basic").strip().lower()
+    if value in ("none", "off", "disabled"):
+        return "off"
+    if value == "custom":
+        return "custom"
+    return "basic"
+
+
+def _effective_filter_terms(mode: str, metadata: dict) -> set[str]:
+    if mode == "off":
+        return set()
+    if mode == "basic":
+        return set(_BASIC_FILTER_TERMS)
+
+    # custom mode
+    custom_from_metadata = str(metadata.get("term_filter_custom_words") or "")
+    source = custom_from_metadata if custom_from_metadata.strip() else TERM_FILTER_CUSTOM_WORDS
+    return _parse_custom_terms(source)
+
+
+def _sanitize_text_value(value: str, blocked_terms: set[str], replacement: str) -> tuple[str, bool]:
+    if not isinstance(value, str) or not blocked_terms:
+        return value, False
+
+    changed = False
+    sanitized = value
+    for term in blocked_terms:
+        pattern = re.compile(rf"\\b{re.escape(term)}\\b", flags=re.IGNORECASE)
+        updated = pattern.sub(replacement, sanitized)
+        if updated != sanitized:
+            changed = True
+            sanitized = updated
+    return sanitized, changed
+
+
+def _apply_content_filter(ai_fields: dict, metadata: dict) -> dict:
+    mode = _effective_filter_mode(metadata)
+    blocked_terms = _effective_filter_terms(mode, metadata)
+    replacement = str(metadata.get("term_filter_replacement") or TERM_FILTER_REPLACEMENT)
+
+    if mode == "off" or not blocked_terms:
+        return ai_fields
+
+    filtered = dict(ai_fields)
+    for key in ["caller_name", "agent_name", "issue_description", "call_summary", "error_messages"]:
+        value = str(filtered.get(key, ""))
+        sanitized, changed = _sanitize_text_value(value, blocked_terms, replacement)
+        if changed:
+            filtered[key] = sanitized
+            confidence_key = f"{key}_confidence"
+            if confidence_key in filtered:
+                filtered[confidence_key] = "low"
+
+    return filtered
 
 
 def _extract_caller_name_from_transcript(transcript: str) -> str | None:
@@ -348,7 +428,7 @@ def _ai_fill_form(transcript: str) -> dict:
                 "stream": False,
                 "options": {"temperature": 0.2},
             },
-            timeout=180,
+            timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT),
         )
         resp.raise_for_status()
         raw_response = resp.json().get("response", "")
@@ -442,6 +522,9 @@ def build_incident_form(data: dict) -> dict:
         if isinstance(value, str) and value.strip():
             ai_fields[field] = value.strip()
             ai_fields[f"{field}_confidence"] = "high"
+
+    # Safety pass to redact blocked terms from high-visibility fields.
+    ai_fields = _apply_content_filter(ai_fields, metadata)
 
     # Extract confidence ratings
     confidence = _extract_confidence(ai_fields)

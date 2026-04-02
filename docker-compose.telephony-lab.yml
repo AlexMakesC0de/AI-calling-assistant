@@ -42,6 +42,10 @@ services:
     volumes:
       - pbx_data:/data
       - pbx_logs:/var/log
+      - ./telephony-lab/seed/asterisk.sql:/assets/seed/asterisk.sql:ro
+      - ./telephony-lab/seed/ivr-greeting.ogg:/assets/seed/ivr-greeting.ogg:ro
+      - ./telephony-lab/seed/post-init-seed.sh:/assets/custom-scripts/post-init-seed.sh:ro
+      - ./telephony-lab/seed/fix-ami-password.sh:/assets/custom-scripts/fix-ami-password.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost/ || exit 1"]
       interval: 30s

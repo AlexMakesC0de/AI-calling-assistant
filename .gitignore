@@ -26,11 +26,16 @@ Thumbs.db
 # ── Docker ─────────────────────────────────────────────────────────────────
 docker-compose.override.yml
 
-# ── Test / generated files ─────────────────────────────────────────────────
+# ── Test / generated audio ─────────────────────────────────────────────────
 *.wav
 *.mp3
+*.ogg
+# Keep the IVR greeting seed file
+!telephony-lab/seed/ivr-greeting.ogg
 
 # ── Environment secrets ───────────────────────────────────────────────────
 .env
 
 pgadmin_data/
+local-storage/
+
