@@ -81,6 +81,14 @@ if [ "$rc" -eq 0 ]; then
     # Install custom dialplan (9999 → IVR with recording)
     printf '[from-internal-custom]\nexten => 9999,1,Answer()\n same => n,Set(__DIRECTION=INBOUND)\n same => n,Set(__FROM_DID=9999)\n same => n,Set(CDR(did)=9999)\n same => n,Gosub(sub-record-check,s,1(in,9999,force))\n same => n,Goto(ivr-1,s,1)\n' > /etc/asterisk/extensions_custom.conf
 
+    # Enable recordingfile in CDR AMI events (for AMI listener)
+    printf '[mappings]\nrecordingfile => recordingfile\n' > /etc/asterisk/cdr_manager_mapping_custom.conf
+    chown asterisk:asterisk /etc/asterisk/cdr_manager_mapping_custom.conf
+
+    # Allow AMI connections from Docker network (for ami-listener container)
+    printf '[admin-docker]\nsecret = amp111\ndeny=0.0.0.0/0.0.0.0\npermit=172.16.0.0/255.240.0.0\nread = system,call,log,verbose,command,agent,user,config,dtmf,reporting,cdr,dialplan,originate,message\nwrite = system,call,log,verbose,command,agent,user,config,dtmf,reporting,cdr,dialplan,originate,message\nwritetimeout = 5000\n' > /etc/asterisk/manager_custom.conf
+    chown asterisk:asterisk /etc/asterisk/manager_custom.conf
+
     # Reload Asterisk manager and FreePBX
     asterisk -rx "manager reload" 2>/dev/null
     fwconsole reload 2>/dev/null

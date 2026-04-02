@@ -167,6 +167,7 @@ services:
       RECORDING_AUTH_VALUE: ${RECORDING_AUTH_VALUE:-}
     volumes:
       - ./local-storage/shared:/data/shared
+      - pbx_recordings:/data/pbx-recordings:ro
     depends_on:
       voice-app:
         condition: service_healthy
@@ -287,3 +288,5 @@ networks:
 
 volumes:
   pgadmin-data:
+  pbx_recordings:
+    name: pbx_recordings

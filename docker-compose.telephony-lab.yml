@@ -3,6 +3,8 @@ services:
     image: mariadb:10.11
     container_name: support-pbx-db
     restart: unless-stopped
+    networks:
+      - app-network
     environment:
       MARIADB_ROOT_PASSWORD: ${PBX_DB_ROOT_PASSWORD:-pbx_root_change_me}
       MARIADB_DATABASE: ${PBX_DB_NAME:-asterisk}
@@ -20,6 +22,8 @@ services:
     image: tiredofit/freepbx:latest
     container_name: support-freepbx
     restart: unless-stopped
+    networks:
+      - app-network
     depends_on:
       pbx-db:
         condition: service_healthy
@@ -42,6 +46,7 @@ services:
     volumes:
       - pbx_data:/data
       - pbx_logs:/var/log
+      - pbx_recordings:/var/spool/asterisk/monitor
       - ./telephony-lab/seed/asterisk.sql:/assets/seed/asterisk.sql:ro
       - ./telephony-lab/seed/ivr-greeting.ogg:/assets/seed/ivr-greeting.ogg:ro
       - ./telephony-lab/seed/post-init-seed.sh:/assets/custom-scripts/post-init-seed.sh:ro
@@ -53,6 +58,39 @@ services:
       retries: 10
       start_period: 20m
 
+  # -----------------------------------------------------------------------
+  # AMI Listener – watches for CDR events and forwards recordings
+  # to the telephony-ingest webhook for pipeline processing.
+  # -----------------------------------------------------------------------
+  ami-listener:
+    restart: unless-stopped
+    build:
+      context: ./telephony-ingest
+      dockerfile: Dockerfile
+    container_name: support-ami-listener
+    networks:
+      - app-network
+    entrypoint: ["python", "-m", "ami_listener"]
+    environment:
+      AMI_HOST: freepbx
+      AMI_PORT: "5038"
+      AMI_USER: ${AMI_USER:-admin-docker}
+      AMI_PASS: ${AMI_PASS:-amp111}
+      WEBHOOK_URL: http://telephony-ingest:5010/webhooks/recording-complete
+      TELEPHONY_WEBHOOK_TOKEN: ${TELEPHONY_WEBHOOK_TOKEN:-}
+      RECORDING_BASE: /data/pbx-recordings
+      AMI_RECONNECT_DELAY: "10"
+    volumes:
+      - pbx_recordings:/data/pbx-recordings:ro
+    depends_on:
+      freepbx:
+        condition: service_healthy
+
+networks:
+  app-network:
+    external: true
+    name: ${COMPOSE_NETWORK:-it-2c_app-network}
+
 volumes:
   pbx_db_data:
     driver: local
@@ -60,3 +98,5 @@ volumes:
     driver: local
   pbx_logs:
     driver: local
+  pbx_recordings:
+    name: pbx_recordings

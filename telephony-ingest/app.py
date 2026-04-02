@@ -94,8 +94,16 @@ def _forward_to_voice_app(event: dict, recording_path: Path) -> dict:
     }
     data = {k: v for k, v in data.items() if v}
 
+    mime_types = {
+        ".wav": "audio/wav",
+        ".ogg": "audio/ogg",
+        ".mp3": "audio/mpeg",
+        ".gsm": "audio/x-gsm",
+    }
+    mime = mime_types.get(recording_path.suffix.lower(), "application/octet-stream")
+
     with recording_path.open("rb") as f:
-        files = {"file": (recording_path.name, f, "audio/wav")}
+        files = {"file": (recording_path.name, f, mime)}
         resp = requests.post(
             VOICE_APP_UPLOAD_URL,
             data=data,
