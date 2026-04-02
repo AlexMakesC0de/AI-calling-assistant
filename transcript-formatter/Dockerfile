@@ -28,5 +28,5 @@ USER appuser
 
 EXPOSE 5001
 
-# Use gunicorn for production; fall back to Flask dev server via CMD override
-CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--timeout", "300", "app:app"]
+# Use threaded workers so long Ollama calls do not block all requests.
+CMD ["gunicorn", "--bind", "0.0.0.0:5001", "--workers", "2", "--worker-class", "gthread", "--threads", "4", "--timeout", "900", "--graceful-timeout", "60", "app:app"]

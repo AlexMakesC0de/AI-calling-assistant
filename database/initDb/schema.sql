@@ -38,3 +38,53 @@ CREATE TABLE IF NOT EXISTS TranscriptChunk (
     FOREIGN KEY (file_id) REFERENCES File(file_id)
 );
 
+CREATE TABLE IF NOT EXISTS incident_form (
+    id SERIAL PRIMARY KEY,
+    file_id INT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'completed',
+    category TEXT,
+    priority TEXT,
+    completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    
+    CONSTRAINT fk_incident_file 
+        FOREIGN KEY (file_id) REFERENCES file(file_id) 
+        ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS incident_transcription (
+    id SERIAL PRIMARY KEY,
+    incident_form_id INT NOT NULL,
+    lang_code VARCHAR(10) NOT NULL,
+    transcript_text TEXT,
+    summary TEXT,
+    sentiment TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    
+    CONSTRAINT fk_transcription_form 
+        FOREIGN KEY (incident_form_id) REFERENCES incident_form(id) 
+        ON DELETE CASCADE,
+    CONSTRAINT unique_lang_per_form 
+        UNIQUE (incident_form_id, lang_code)
+);
+
+
+CREATE TABLE IF NOT EXISTS incident_general_information (
+    incident_form_id INT PRIMARY KEY,
+    caller_name VARCHAR(255),
+    agent_name VARCHAR(255),
+    audio_filename TEXT,
+    form_data JSONB NOT NULL DEFAULT '{}',
+    
+    CONSTRAINT fk_info_form 
+        FOREIGN KEY (incident_form_id) REFERENCES incident_form(id) 
+        ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_transcription_form_id ON incident_transcription(incident_form_id);
+CREATE INDEX IF NOT EXISTS idx_incident_form_file_id ON incident_form(file_id);
+CREATE INDEX IF NOT EXISTS idx_transcription_lang ON incident_transcription(lang_code);
+
+
+
+    
+
