@@ -25,6 +25,7 @@ class AppConfig:
     upload_dir: Path
     whisper_url: str
     formatter_url: str
+    formatter_timeout_seconds: int
     email_url: str
     support_email: str
     max_file_size_mb: int
@@ -36,6 +37,7 @@ class AppConfig:
     db_name: str
     db_user: str
     db_password: str
+    db_save_wait_seconds: int
 
     storage_account_email: str
     storage_account_password: str
@@ -47,7 +49,14 @@ class AppConfig:
     @classmethod
     def from_env(cls) -> "AppConfig":
         upload_dir = Path(os.getenv("UPLOAD_DIR", "/data/shared/uploads"))
-        upload_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            upload_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            fallback_upload_dir = Path(
+                os.getenv("UPLOAD_DIR_FALLBACK", "/tmp/uploads")
+            )
+            fallback_upload_dir.mkdir(parents=True, exist_ok=True)
+            upload_dir = fallback_upload_dir
 
         whisper_url = os.getenv(
             "TRANSCRIBER_URL",
@@ -58,6 +67,9 @@ class AppConfig:
             upload_dir=upload_dir,
             whisper_url=whisper_url,
             formatter_url=os.getenv("FORMATTER_URL", "http://localhost:5001/format"),
+            formatter_timeout_seconds=max(
+                120, int(os.getenv("FORMATTER_TIMEOUT_SECONDS", "360"))
+            ),
             email_url=os.getenv("EMAIL_URL", "http://email-sender:5002/send"),
             support_email=os.getenv("SUPPORT_EMAIL", "support-team@example.com"),
             max_file_size_mb=int(os.getenv("MAX_FILE_SIZE_MB", "50")),
@@ -69,6 +81,9 @@ class AppConfig:
             db_user=os.getenv("DB_USER", os.getenv("POSTGRES_USER", "support")),
             db_password=os.getenv(
                 "DB_PASSWORD", os.getenv("POSTGRES_PASSWORD", "support_secret")
+            ),
+            db_save_wait_seconds=max(
+                5, min(10, int(os.getenv("DB_SAVE_WAIT_SECONDS", "8")))
             ),
             storage_account_email=os.getenv(
                 "STORAGE_ACCOUNT_EMAIL", "voice-app-storage@local"

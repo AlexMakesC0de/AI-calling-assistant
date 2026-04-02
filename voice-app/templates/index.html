@@ -167,6 +167,20 @@
       <h2>Pipeline Response</h2>
       <pre id="responseBox">No request sent yet.</pre>
     </section>
+
+    <section class="card" style="margin-top: 16px;">
+      <h2>Transcripts</h2>
+      <div class="grid" style="grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));">
+        <div>
+          <h3 style="margin: 0 0 8px; font-size: 0.95rem; color: var(--muted);">Original Language</h3>
+          <pre id="originalTranscriptBox">No transcript yet.</pre>
+        </div>
+        <div>
+          <h3 style="margin: 0 0 8px; font-size: 0.95rem; color: var(--muted);">Dutch Translation (NL)</h3>
+          <pre id="dutchTranscriptBox">No translation yet.</pre>
+        </div>
+      </div>
+    </section>
   </div>
 
   <script>
@@ -181,6 +195,8 @@
     const recordStatus = document.getElementById('recordStatus');
 
     const responseBox = document.getElementById('responseBox');
+    const originalTranscriptBox = document.getElementById('originalTranscriptBox');
+    const dutchTranscriptBox = document.getElementById('dutchTranscriptBox');
     const callerNameInput = document.getElementById('callerNameInput');
     const accountRefInput = document.getElementById('accountRefInput');
     const contactInfoInput = document.getElementById('contactInfoInput');
@@ -191,6 +207,17 @@
 
     function showResponse(payload) {
       responseBox.textContent = JSON.stringify(payload, null, 2);
+
+      const original = payload?.pipeline?.transcripts?.original
+        || payload?.pipeline?.transcription?.text
+        || payload?.pipeline?.incident_form?.form?.transcript?.full_text
+        || '';
+      const dutch = payload?.pipeline?.transcripts?.dutch
+        || payload?.pipeline?.incident_form?.form?.translated_nl?.transcript_text
+        || '';
+
+      originalTranscriptBox.textContent = original || 'No transcript available.';
+      dutchTranscriptBox.textContent = dutch || 'No Dutch translation available.';
     }
 
     async function sendToPipeline(fileLike, filename) {

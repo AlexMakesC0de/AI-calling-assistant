@@ -378,21 +378,36 @@ def transcribe():
         plain_text = _build_plain_transcript(words)
 
         if do_diarize and len(words) >= 5:
-            # Step 2: Load audio for speaker embeddings
-            logger.info("Loading audio for diarization...")
-            waveform, sample_rate = _load_audio(tmp_path)
+            try:
+                # Step 2: Load audio for speaker embeddings
+                logger.info("Loading audio for diarization...")
+                waveform, sample_rate = _load_audio(tmp_path)
 
-            # Step 3: Assign speakers
-            logger.info("Running speaker diarization (%d expected speakers)...",
-                        num_speakers)
-            words = _assign_speakers(words, waveform, sample_rate, num_speakers)
+                # Step 3: Assign speakers
+                logger.info("Running speaker diarization (%d expected speakers)...",
+                            num_speakers)
+                words = _assign_speakers(words, waveform, sample_rate, num_speakers)
 
-            # Step 4: Build diarized transcript
-            diarized_text = _build_diarized_transcript(words)
-            speakers_detected = len(set(w.get("speaker", 1) for w in words))
+                # Step 4: Build diarized transcript
+                diarized_text = _build_diarized_transcript(words)
+                speakers_detected = len(set(w.get("speaker", 1) for w in words))
 
-            # Build segment list
-            segments = _build_segments(words)
+                # Build segment list
+                segments = _build_segments(words)
+            except Exception as exc:
+                logger.warning(
+                    "Diarization failed for %s, falling back to plain transcript: %s",
+                    file.filename,
+                    exc,
+                )
+                diarized_text = plain_text
+                speakers_detected = 1
+                segments = [{
+                    "speaker": 1,
+                    "text": plain_text,
+                    "start": words[0]["start"],
+                    "end": words[-1]["end"],
+                }]
         else:
             diarized_text = plain_text
             speakers_detected = 1
