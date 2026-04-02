@@ -118,7 +118,7 @@ services:
       - "5000:5000"
     environment:
       UPLOAD_DIR: /data/shared/uploads
-      TRANSCRIBER_URL: ${TRANSCRIBER_URL:-http://transcriber:9000/asr}
+      TRANSCRIBER_URL: ${TRANSCRIBER_URL:-http://transcriber:9000/transcribe}
       FORMATTER_URL: ${FORMATTER_URL:-http://transcript-formatter:5001/format}
       EMAIL_URL: ${EMAIL_URL:-http://email-sender:5002/send}
       SUPPORT_EMAIL: ${SUPPORT_EMAIL:-support-team@example.com}
@@ -183,18 +183,22 @@ services:
   # -----------------------------------------------------------------------
   transcriber:
     <<: *common
-    image: onerahmet/openai-whisper-asr-webservice:latest
+    build:
+      context: ./transcriber
+      dockerfile: Dockerfile
     container_name: support-transcriber
     environment:
-      ASR_MODEL: ${WHISPER_MODEL:-small}
-      ASR_ENGINE: openai_whisper
+      WHISPER_MODEL_SIZE: ${WHISPER_MODEL:-small}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
+      NUM_SPEAKERS: ${NUM_SPEAKERS:-2}
     ports:
       - "9000:9000"
     volumes:
       - ./local-storage/shared:/data/shared
       - ./local-storage/whisper-models:/models
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9000/docs || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
