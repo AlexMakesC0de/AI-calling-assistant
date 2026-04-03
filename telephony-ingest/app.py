@@ -1,6 +1,4 @@
-import json
 import logging
-from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -8,7 +6,6 @@ from flask import Flask, jsonify, request
 
 from auth import require_auth
 from config import (
-    EVENTS_DIR,
     FORWARD_TIMEOUT,
     RECORDING_AUTH_HEADER,
     RECORDING_AUTH_VALUE,
@@ -16,6 +13,7 @@ from config import (
     TMP_DIR,
     VOICE_APP_UPLOAD_URL,
 )
+from events import save_event
 from util import safe_stem
 
 app = Flask(__name__)
@@ -25,14 +23,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-def _save_event(event: dict) -> Path:
-    event_id = str(event.get("event_id") or event.get("call_id") or datetime.now(timezone.utc).timestamp())
-    event_file = EVENTS_DIR / f"{safe_stem(event_id)}.json"
-    with event_file.open("w", encoding="utf-8") as f:
-        json.dump(event, f, ensure_ascii=False, indent=2)
-    return event_file
 
 
 def _download_recording(recording_url: str, call_id: str) -> Path:
@@ -115,7 +105,7 @@ def recording_complete():
         return jsonify({"error": "Request body must be valid JSON."}), 400
 
     try:
-        event_file = _save_event(payload)
+        event_file = save_event(payload)
         recording_path = _resolve_recording_path(payload)
         pipeline_result = _forward_to_voice_app(payload, recording_path)
 
