@@ -114,6 +114,11 @@ class PostgresRepository:
                             ON incident_form (file_id);
                         """
                     )
+                    # Safety net: ensure column exists even if table was created
+                    # by an older schema version that lacked it.
+                    cur.execute(
+                        "ALTER TABLE incident_transcription ADD COLUMN IF NOT EXISTS transcript_text TEXT"
+                    )
                 conn.commit()
             finally:
                 self._release_connection(conn)
