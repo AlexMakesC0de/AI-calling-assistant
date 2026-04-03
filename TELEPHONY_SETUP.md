@@ -7,6 +7,8 @@ This document captures the practical path from local PBX testing to provider pil
 - [Current Status](#current-status)
 - [Implemented Components](#implemented-components)
 - [End-To-End Flow](#end-to-end-flow)
+- [AMI Listener](#ami-listener)
+- [Seed Automation](#seed-automation)
 - [Webhook Contract](#webhook-contract)
 - [Local Lab Setup](#local-lab-setup)
 - [Known Pitfalls And Fixes](#known-pitfalls-and-fixes)
@@ -20,7 +22,11 @@ What is working now:
 1. Internal extension calling works in the FreePBX lab.
 2. Two-way audio was validated in local device-to-device call testing.
 3. `telephony-ingest` receives webhook payloads and forwards audio to `voice-app`.
-4. Existing pipeline still handles transcript, formatting, email, and DB storage.
+4. AMI listener watches CDR events and sends webhooks to `telephony-ingest` automatically.
+5. Seed script auto-configures AMI user (`admin-docker`), CDR mapping, IVR greeting, and custom dialplan on first boot.
+6. `fix-ami-password.sh` syncs AMI credentials across config files and DB on every container start.
+7. Recordings are shared between FreePBX and ingest services via the `pbx_recordings` named volume.
+8. Existing pipeline handles transcription (with speaker diarization), formatting, email, and DB storage.
 
 What is not production-ready yet:
 1. Provider-side webhook delivery and retry are not configured.
@@ -29,22 +35,60 @@ What is not production-ready yet:
 
 ## Implemented Components
 
-1. Service `telephony-ingest`.
+1. Service `telephony-ingest` — recording webhook adapter.
 2. Endpoint `POST /webhooks/recording-complete`.
 3. Raw event persistence under `/data/shared/telephony-events`.
 4. Forwarding from telephony event to `voice-app /upload`.
 5. Local helper script `test_telephony_ingest.sh`.
+6. AMI listener (`ami-listener`) — watches Asterisk CDR events and fires webhooks.
+7. Seed script (`post-init-seed.sh`) — first-boot automation for FreePBX.
+8. AMI password sync (`fix-ami-password.sh`) — every-boot credential sync.
+9. Shared `pbx_recordings` named volume for recording access across containers.
+10. Custom IVR accessible via extension 9999.
 
 ## End-To-End Flow
 
-1. PBX or provider emits `recording-complete` webhook.
-2. `telephony-ingest` resolves recording from `recording_path` or `recording_url`.
-3. Recording is forwarded to `voice-app /upload`.
-4. Existing pipeline runs:
-   - transcribe,
-   - format incident report,
+1. Call is placed between extensions in FreePBX (or dial 9999 for IVR demo).
+2. Asterisk records the call in OGG Vorbis format to the shared `pbx_recordings` volume.
+3. AMI listener detects the CDR event and sends a webhook to `telephony-ingest`.
+4. `telephony-ingest` resolves recording from `recording_path` and forwards to `voice-app /upload`.
+5. Pipeline runs:
+   - transcribe (with speaker diarization),
+   - format incident report via Ollama,
    - send email,
-   - persist form.
+   - persist form to database.
+
+## AMI Listener
+
+The `ami-listener` service (defined in `docker-compose.telephony-lab.yml`) connects to Asterisk's Manager Interface (AMI) on port 5038 and watches for `Cdr` events. When a call with a recording is detected (duration > 3 seconds), it sends a webhook to `telephony-ingest`.
+
+Key details:
+- AMI user: `admin-docker` (created by the seed script in `manager_custom.conf`).
+- Docker network permit: `172.16.0.0/255.240.0.0` covers typical Docker bridge subnets.
+- `fix-ami-password.sh` runs on every FreePBX container start and syncs the AMI password across `amportal.conf`, `manager.conf`, `manager_custom.conf`, and the Asterisk database.
+- Webhook timeout is 300 seconds (to accommodate CPU-bound transcription).
+- Auto-reconnects on AMI connection loss.
+
+Environment variables (`docker-compose.telephony-lab.yml`):
+| Variable | Default | Purpose |
+|---|---|---|
+| `AMI_HOST` | `freepbx` | Asterisk hostname |
+| `AMI_PORT` | `5038` | AMI port |
+| `AMI_USER` | `admin-docker` | AMI username |
+| `AMI_PASS` | from `.env` | AMI password |
+| `WEBHOOK_URL` | `http://telephony-ingest:5010/webhooks/recording-complete` | Ingest endpoint |
+| `WEBHOOK_TIMEOUT` | `300` | Seconds before webhook times out |
+
+## Seed Automation
+
+`telephony-lab/seed/post-init-seed.sh` runs once on first FreePBX boot and:
+1. Creates the `admin-docker` AMI user in `manager_custom.conf` with Docker subnet access.
+2. Installs CDR field mapping for call metadata persistence.
+3. Copies the IVR greeting audio to the correct directory.
+4. Adds a custom dialplan entry so extension 9999 routes to the IVR.
+5. Reloads Asterisk configuration.
+
+The seed is idempotent — it checks for a marker file and skips if already run.
 
 ## Webhook Contract
 
@@ -108,10 +152,17 @@ docker compose -f docker-compose.telephony-lab.yml up -d
 ```
 
 3. Configure FreePBX:
+
+   On first boot, `post-init-seed.sh` automatically:
+   - Creates the `admin-docker` AMI user with Docker network access.
+   - Installs CDR mapping so call metadata is written correctly.
+   - Installs the IVR greeting and custom dialplan (extension 9999).
+
+   You still need to manually:
    - Create extensions (for example 1001, 1002).
-   - Set ring group (for example 600).
-   - Route unanswered calls to voicemail.
-   - Enable recording for answered and unanswered scenarios.
+   - Set ring group (for example 600) if desired.
+   - Route unanswered calls to voicemail if desired.
+   - Enable recording for answered and unanswered scenarios (or set recording format to OGG via `Settings > General > Call Recording Format`).
 
 4. Configure softphones:
    - SIP server: machine running FreePBX.
@@ -134,7 +185,19 @@ bash ./test_telephony_ingest.sh
 
 ## Known Pitfalls And Fixes
 
-1. Auth keeps failing even with correct extension number:
+1. AMI listener cannot connect to Asterisk:
+   - Cause: Default `manager.conf` only permits `127.0.0.1`.
+   - Fix: The seed script creates `admin-docker` in `manager_custom.conf` with `permit=172.16.0.0/255.240.0.0` for Docker network access. If the AMI password drifts, `fix-ami-password.sh` syncs it on each container start.
+
+2. Recordings not visible in telephony-ingest:
+   - Cause: Container was built before the `pbx_recordings` volume was added to the compose file.
+   - Fix: Rebuild with `docker compose -f docker-compose.telephony-lab.yml up -d --build telephony-ingest`.
+
+3. Webhook times out (pipeline takes longer than 30 seconds):
+   - Cause: Transcription + AI formatting can take over 60 seconds on CPU.
+   - Fix: `WEBHOOK_TIMEOUT` default is 300 seconds in the AMI listener.
+
+4. Auth keeps failing even with correct extension number:
    - Cause: User Manager password was confused with extension secret.
    - Fix: Use extension secret from FreePBX extension config.
 
