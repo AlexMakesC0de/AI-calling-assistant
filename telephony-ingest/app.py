@@ -16,6 +16,7 @@ from config import (
     VOICE_APP_UPLOAD_URL,
     WEBHOOK_SHARED_TOKEN,
 )
+from util import safe_stem
 
 app = Flask(__name__)
 
@@ -33,21 +34,16 @@ def _require_auth() -> bool:
     return token == WEBHOOK_SHARED_TOKEN
 
 
-def _safe_stem(value: str) -> str:
-    cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value)
-    return cleaned[:120] if cleaned else "event"
-
-
 def _save_event(event: dict) -> Path:
     event_id = str(event.get("event_id") or event.get("call_id") or datetime.now(timezone.utc).timestamp())
-    event_file = EVENTS_DIR / f"{_safe_stem(event_id)}.json"
+    event_file = EVENTS_DIR / f"{safe_stem(event_id)}.json"
     with event_file.open("w", encoding="utf-8") as f:
         json.dump(event, f, ensure_ascii=False, indent=2)
     return event_file
 
 
 def _download_recording(recording_url: str, call_id: str) -> Path:
-    out_file = TMP_DIR / f"{_safe_stem(call_id)}.wav"
+    out_file = TMP_DIR / f"{safe_stem(call_id)}.wav"
     headers = {}
     if RECORDING_AUTH_HEADER and RECORDING_AUTH_VALUE:
         headers[RECORDING_AUTH_HEADER] = RECORDING_AUTH_VALUE
