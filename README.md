@@ -32,11 +32,11 @@ Local-first support-call pipeline with Docker Compose:
 ```mermaid
 flowchart LR
     A[Audio File or Browser Recording] --> B[voice-app :5000]
-    B --> C[transcriber :9000 /asr]
+    B --> C[transcriber :9000 /transcribe]
     B --> D[transcript-formatter :5001 /format]
     B --> E[email-sender :5002 /send]
     B --> F[(PostgreSQL :5432)]
-    G[PBX or Provider Webhook] --> H[telephony-ingest :5010]
+    G[PBX / AMI Listener] --> H[telephony-ingest :5010]
     H --> B
 ```
 
@@ -46,14 +46,16 @@ Mailpit (`:8025`) is available in `dev` profile for local inbox preview.
 
 | Service | Container | Port | Purpose |
 |---|---|---|---|
-| `database` | `support-db` | 5432 | Incident form persistence |
-| `n8n` | `support-n8n` | 5678 | Optional workflow orchestration |
+| `database` | `support-db` | 5432 | Incident form persistence (PostgreSQL + pgvector) |
+| `ollama` | `support-ollama` | 11434 | Local LLM runtime (llama3.1:8b) |
 | `voice-app` | `support-voice-app` | 5000 | UI + `/upload` API |
 | `telephony-ingest` | `support-telephony-ingest` | 5010 | Recording webhook adapter |
-| `transcriber` | `support-transcriber` | 9000 | Whisper ASR endpoint |
-| `transcript-formatter` | `support-transcript-formatter` | 5001 | Local AI form filling |
+| `transcriber` | `support-transcriber` | 9000 | Whisper STT + speaker diarization |
+| `transcript-formatter` | `support-transcript-formatter` | 5001 | AI form filling via Ollama |
 | `email-sender` | `support-email-sender` | 5002 | SMTP dispatch |
 | `mailpit` (`dev`) | `support-mailpit` | 8025 | Local test inbox |
+| `pgadmin` (`dev`) | `pgAdmin` | 8080 | Database admin UI |
+| `n8n` | `support-n8n` | 5678 | Optional workflow orchestration |
 
 ## Prerequisites
 
@@ -84,7 +86,8 @@ Optional script flags:
 - `./scripts/start-stack-auto.sh --dry-run`
 - `./scripts/start-stack-auto.sh --min-gpu-vram-gb 10`
 
-Optional NVIDIA GPU acceleration (Linux and Windows with Docker GPU support enabled):
+Optional NVIDIA GPU acceleration (Linux and Windows with Docker GPU support enabled).
+GPU mode accelerates both Ollama (LLM) and the transcriber (Whisper + diarization):
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml --profile dev up -d --build
@@ -315,7 +318,11 @@ Important `.env` values:
 | `SMTP_HOST` | `mailpit` | email-sender |
 | `SMTP_PORT` | `1025` | email-sender |
 | `OLLAMA_MODEL` | `llama3.1:8b` | transcript-formatter |
-| `WHISPER_MODEL` | `small` | transcriber |
+| `WHISPER_MODEL` | `small` | transcriber (model size) |
+| `WHISPER_DEVICE` | `cpu` | transcriber (`cpu` or `cuda`) |
+| `WHISPER_COMPUTE_TYPE` | `int8` | transcriber quantization |
+| `NUM_SPEAKERS` | `2` | transcriber diarization |
+| `TRANSCRIBER_URL` | `http://transcriber:9000/transcribe` | voice-app |
 | `TELEPHONY_WEBHOOK_TOKEN` | empty | telephony-ingest auth |
 
 ## Troubleshooting

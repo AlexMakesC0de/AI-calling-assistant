@@ -66,6 +66,7 @@ curl -sS http://localhost:5000/health
 curl -sS http://localhost:5001/health
 curl -sS http://localhost:5002/health
 curl -sS http://localhost:5010/health
+curl -sS http://localhost:9000/health
 ```
 
 Windows PowerShell:
@@ -75,6 +76,7 @@ curl.exe -sS http://localhost:5000/health
 curl.exe -sS http://localhost:5001/health
 curl.exe -sS http://localhost:5002/health
 curl.exe -sS http://localhost:5010/health
+curl.exe -sS http://localhost:9000/health
 ```
 
 Each endpoint should return `{"status":"ok"}`.
@@ -286,6 +288,7 @@ docker compose --profile dev down -v
 | Formatter API | http://localhost:5001 |
 | Email Sender API | http://localhost:5002 |
 | Telephony Ingest | http://localhost:5010 |
-| Transcriber Docs | http://localhost:9000/docs |
+| Transcriber Health | http://localhost:9000/health |
 | n8n | http://localhost:5678 |
 | Mailpit | http://localhost:8025 |
+| pgAdmin | http://localhost:8080 |
