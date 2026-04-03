@@ -36,6 +36,36 @@ class PostgresRepository:
             conn = self.get_connection()
             try:
                 with conn.cursor() as cur:
+                    # Ensure prerequisite tables exist (normally created by
+                    # database/initDb/schema.sql, but needed if init hasn't run).
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS account (
+                            account_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                            password   VARCHAR(255) NOT NULL,
+                            account_email VARCHAR(255) UNIQUE NOT NULL
+                        );
+                        CREATE TABLE IF NOT EXISTS recordSession (
+                            recordingSession_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                            startTime   TIMESTAMP NOT NULL,
+                            endTime     TIMESTAMP,
+                            AccountId   INT NOT NULL,
+                            FOREIGN KEY (AccountId) REFERENCES account(account_id)
+                        );
+                        CREATE TABLE IF NOT EXISTS fileType (
+                            fileType_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                            fileTypeName VARCHAR(50) NOT NULL UNIQUE
+                        );
+                        CREATE TABLE IF NOT EXISTS file (
+                            file_id INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                            fileTypeId INT NOT NULL,
+                            fileUrl    TEXT NOT NULL,
+                            recordingSession_id INT NOT NULL,
+                            FOREIGN KEY (fileTypeId) REFERENCES fileType(fileType_id),
+                            FOREIGN KEY (recordingSession_id) REFERENCES recordSession(recordingSession_id)
+                        );
+                        """
+                    )
                     cur.execute(
                         """
                         CREATE TABLE IF NOT EXISTS incident_form (
@@ -83,9 +113,6 @@ class PostgresRepository:
                         CREATE INDEX IF NOT EXISTS idx_incident_form_file_id
                             ON incident_form (file_id);
                         """
-                    )
-                    cur.execute(
-                        "ALTER TABLE incident_transcription ADD COLUMN IF NOT EXISTS transcript_text TEXT"
                     )
                 conn.commit()
             finally:

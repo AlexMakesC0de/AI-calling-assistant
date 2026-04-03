@@ -165,7 +165,7 @@ class VoiceRecordingApp:
                 audio_path=str(filepath),
                 transcript_text=transcript_text,
                 completed_at=completed_form.get("completed_at"),
-                source_lang=transcription.get("language"),
+                source_lang=transcription.get("detected_language"),
             )
 
             try:
@@ -215,31 +215,6 @@ class VoiceRecordingApp:
             except Exception as exc:
                 logger.error("Email failed after retries: %s", exc)
                 result["pipeline"]["email"] = {"status": "failed", "error": str(exc)}
-
-            logger.info("Step 4: Storing form in database...")
-            storage_result = self._db.store_upload_with_form(
-                form=completed_form,
-                audio_filename=filename,
-                audio_path=str(filepath),
-                transcript_text=transcript_text,
-                completed_at=completed_form.get("completed_at"),
-                source_lang=transcription.get("detected_language"),
-            )
-            storage_projection_stored = storage_result is not None
-            stored = bool(storage_result and storage_result.get("incident_form_stored"))
-
-            if stored and storage_projection_stored:
-                db_status = "stored"
-            elif stored or storage_projection_stored:
-                db_status = "partial"
-            else:
-                db_status = "failed"
-
-            result["pipeline"]["database"] = {
-                "status": db_status,
-                "incident_form": "stored" if stored else "failed",
-                "storage_projection": "stored" if storage_projection_stored else "failed",
-            }
 
             translated_nl = completed_form.get("translated_nl", {})
             if isinstance(translated_nl, dict):
