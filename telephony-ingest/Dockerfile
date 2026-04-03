@@ -15,8 +15,8 @@ COPY . .
 
 RUN addgroup --system appgroup && \
     adduser --system --ingroup appgroup appuser && \
-    mkdir -p /data/shared/telephony-events /tmp/telephony && \
-    chown -R appuser:appgroup /app /data/shared /tmp/telephony
+    mkdir -p /data/shared/telephony-events /data/pbx-recordings /tmp/telephony && \
+    chown -R appuser:appgroup /app /data/shared /data/pbx-recordings /tmp/telephony
 
 USER appuser
 

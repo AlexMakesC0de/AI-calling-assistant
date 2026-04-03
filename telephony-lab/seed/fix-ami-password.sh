@@ -47,6 +47,16 @@
         fi
     fi
 
+    # 2b. Fix manager_custom.conf (admin-docker user for AMI listener)
+    if [ -f /etc/asterisk/manager_custom.conf ]; then
+        mgr_custom_current=$(grep "^secret = " /etc/asterisk/manager_custom.conf 2>/dev/null | head -1 | awk '{print $3}')
+        if [ "$mgr_custom_current" != "$AMI_PASS" ]; then
+            sed -i "s/^secret = .*/secret = $AMI_PASS/" /etc/asterisk/manager_custom.conf
+            echo "$LOG_PREFIX Fixed manager_custom.conf (was: $mgr_custom_current)"
+            changed=1
+        fi
+    fi
+
     # 3. Fix DB (freepbx_settings)
     DB_USER=$(php -r "include '/etc/freepbx.conf'; echo \$amp_conf['AMPDBUSER'];" 2>/dev/null)
     DB_PASS_DB=$(php -r "include '/etc/freepbx.conf'; echo \$amp_conf['AMPDBPASS'];" 2>/dev/null)
