@@ -6,6 +6,7 @@ from pathlib import Path
 import requests
 from flask import Flask, jsonify, request
 
+from auth import require_auth
 from config import (
     EVENTS_DIR,
     FORWARD_TIMEOUT,
@@ -14,7 +15,6 @@ from config import (
     RECORDING_DOWNLOAD_TIMEOUT,
     TMP_DIR,
     VOICE_APP_UPLOAD_URL,
-    WEBHOOK_SHARED_TOKEN,
 )
 from util import safe_stem
 
@@ -25,13 +25,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-
-def _require_auth() -> bool:
-    if not WEBHOOK_SHARED_TOKEN:
-        return True
-    token = request.headers.get("X-Telephony-Token", "")
-    return token == WEBHOOK_SHARED_TOKEN
 
 
 def _save_event(event: dict) -> Path:
@@ -114,7 +107,7 @@ def health():
 
 @app.route("/webhooks/recording-complete", methods=["POST"])
 def recording_complete():
-    if not _require_auth():
+    if not require_auth():
         return jsonify({"error": "unauthorized"}), 401
 
     payload = request.get_json(silent=True)
