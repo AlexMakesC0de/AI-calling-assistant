@@ -1,4 +1,6 @@
 import logging
+import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from typing import Any
 
 from flask import Flask, jsonify, render_template, request
@@ -24,6 +26,7 @@ class VoiceRecordingApp:
         self._db = PostgresRepository(config, logger)
         self._validator = UploadValidator(config)
         self._clients = PipelineClients(config, logger)
+        self._executor = ThreadPoolExecutor(max_workers=4)
 
         self.app = Flask(__name__)
         self._register_routes()
@@ -78,17 +81,28 @@ class VoiceRecordingApp:
                     "term_filter_replacement", ""
                 ).strip(),
             }
+            include_dutch_raw = str(
+                request.form.get("include_dutch_translation", "")
+            ).strip().lower()
+            if include_dutch_raw in {"true", "false", "1", "0", "yes", "no", "on", "off"}:
+                caller_metadata["include_dutch_translation"] = include_dutch_raw
             caller_metadata = {k: v for k, v in caller_metadata.items() if v}
 
             logger.info("Step 1: Transcribing %s via Whisper...", filename)
             try:
                 transcription = self._clients.transcribe(filepath)
                 transcript_text = transcription.get("text", "")
+                alpha_chars = len(re.findall(r"[A-Za-z]", transcript_text))
                 result["pipeline"]["transcription"] = {
                     "status": "success",
                     "text": transcript_text,
                     "word_count": len(transcript_text.split()),
                 }
+                if alpha_chars < 6:
+                    result["pipeline"]["transcription"]["quality_warning"] = (
+                        "Transcript content is too short/noisy for reliable translation. "
+                        "Try a clearer recording or a larger Whisper model."
+                    )
                 logger.info(
                     "Transcription complete: %d words", len(transcript_text.split())
                 )
@@ -129,19 +143,68 @@ class VoiceRecordingApp:
             logger.info(
                 "Step 3: Emailing completed form to %s...", self._config.support_email
             )
+            form = completed_form
+            email_body = EmailBodyBuilder.build(form)
+            email_payload = {
+                "to": self._config.support_email,
+                "subject": (
+                    f"Incident Form Completed - {form.get('form_id', 'N/A')} "
+                    f"[{form.get('issue', {}).get('category', 'General')}]"
+                ),
+                "body": email_body,
+                "report": form,
+            }
+
+            email_future = self._executor.submit(self._clients.send_email, email_payload)
+
+            logger.info("Step 4: Storing form in database...")
+            db_future = self._executor.submit(
+                self._db.store_upload_with_form,
+                form=completed_form,
+                audio_filename=filename,
+                audio_path=str(filepath),
+                transcript_text=transcript_text,
+                completed_at=completed_form.get("completed_at"),
+                source_lang=transcription.get("detected_language"),
+            )
+
             try:
-                form = completed_form
-                email_body = EmailBodyBuilder.build(form)
-                email_payload = {
-                    "to": self._config.support_email,
-                    "subject": (
-                        f"Incident Form Completed - {form.get('form_id', 'N/A')} "
-                        f"[{form.get('issue', {}).get('category', 'General')}]"
-                    ),
-                    "body": email_body,
-                    "report": form,
+                storage_result = db_future.result(timeout=self._config.db_save_wait_seconds)
+                if storage_result:
+                    result["pipeline"]["database"] = {
+                        "status": "stored",
+                        "incident_form": "stored",
+                        "storage_projection": "stored",
+                        **storage_result,
+                    }
+                else:
+                    result["pipeline"]["database"] = {
+                        "status": "failed",
+                        "incident_form": "failed",
+                        "storage_projection": "failed",
+                    }
+            except FutureTimeoutError:
+                logger.warning(
+                    "Database save exceeded %ss wait window; continuing in background.",
+                    self._config.db_save_wait_seconds,
+                )
+                result["pipeline"]["database"] = {
+                    "status": "processing",
+                    "incident_form": "processing",
+                    "storage_projection": "processing",
+                    "note": "Database save continues in background.",
                 }
-                self._clients.send_email(email_payload)
+            except Exception as exc:
+                logger.error("Database save failed: %s", exc)
+                result["pipeline"]["database"] = {
+                    "status": "failed",
+                    "incident_form": "failed",
+                    "storage_projection": "failed",
+                    "error": str(exc),
+                }
+
+            try:
+                email_future.result(timeout=45)
                 result["pipeline"]["email"] = {
                     "status": "sent",
                     "sent_to": self._config.support_email,
@@ -153,29 +216,12 @@ class VoiceRecordingApp:
                 logger.error("Email failed after retries: %s", exc)
                 result["pipeline"]["email"] = {"status": "failed", "error": str(exc)}
 
-            logger.info("Step 4: Storing form in database...")
-            storage_result = self._db.store_upload_with_form(
-                form=completed_form,
-                audio_filename=filename,
-                audio_path=str(filepath),
-                transcript_text=transcript_text,
-                completed_at=completed_form.get("completed_at"),
-            )
-            storage_projection_stored = storage_result is not None
-            stored = bool(storage_result and storage_result.get("incident_form_stored"))
-
-            if stored and storage_projection_stored:
-                db_status = "stored"
-            elif stored or storage_projection_stored:
-                db_status = "partial"
-            else:
-                db_status = "failed"
-
-            result["pipeline"]["database"] = {
-                "status": db_status,
-                "incident_forms": "stored" if stored else "failed",
-                "storage_projection": "stored" if storage_projection_stored else "failed",
-            }
+            translated_nl = completed_form.get("translated_nl", {})
+            if isinstance(translated_nl, dict):
+                result["pipeline"]["transcripts"] = {
+                    "original": transcript_text,
+                    "dutch": translated_nl.get("transcript_text", ""),
+                }
 
             return jsonify(result), 200
 

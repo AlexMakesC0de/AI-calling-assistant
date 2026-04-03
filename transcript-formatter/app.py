@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import re
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -34,10 +35,19 @@ app.config["TEMPLATE_DIR"] = os.getenv("TEMPLATE_DIR", "/data/shared/templates")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 OLLAMA_CONNECT_TIMEOUT = float(os.getenv("OLLAMA_CONNECT_TIMEOUT", "3"))
-OLLAMA_READ_TIMEOUT = float(os.getenv("OLLAMA_READ_TIMEOUT", "60"))
+OLLAMA_READ_TIMEOUT = float(os.getenv("OLLAMA_READ_TIMEOUT", "120"))
+OLLAMA_TRANSLATE_READ_TIMEOUT = float(
+    os.getenv("OLLAMA_TRANSLATE_READ_TIMEOUT", str(max(OLLAMA_READ_TIMEOUT, 120.0)))
+)
+OLLAMA_PULL_TIMEOUT = float(os.getenv("OLLAMA_PULL_TIMEOUT", "900"))
+TRANSLATION_TIME_BUDGET = float(os.getenv("TRANSLATION_TIME_BUDGET", "240"))
 TERM_FILTER_MODE = os.getenv("TERM_FILTER_MODE", "basic").strip().lower()
 TERM_FILTER_CUSTOM_WORDS = os.getenv("TERM_FILTER_CUSTOM_WORDS", "")
 TERM_FILTER_REPLACEMENT = os.getenv("TERM_FILTER_REPLACEMENT", "[redacted]")
+TRANSLATION_CHUNK_MAX_CHARS = int(os.getenv("TRANSLATION_CHUNK_MAX_CHARS", "2500"))
+DEFAULT_INCLUDE_DUTCH_TRANSLATION = os.getenv(
+    "DEFAULT_INCLUDE_DUTCH_TRANSLATION", "true"
+).strip().lower() in ("1", "true", "yes", "on")
 
 _BASIC_FILTER_TERMS = {
     "nigger",
@@ -53,6 +63,8 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s – %(message)s",
 )
 logger = logging.getLogger(__name__)
+
+_ACTIVE_OLLAMA_MODEL: str | None = None
 
 # ---------------------------------------------------------------------------
 # Request Schema
@@ -255,6 +267,69 @@ def _extract_caller_name_from_transcript(transcript: str) -> str | None:
     return None
 
 
+def _ollama_list_models() -> list[str]:
+    try:
+        resp = http_client.get(
+            f"{OLLAMA_URL}/api/tags",
+            timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT),
+        )
+        resp.raise_for_status()
+        models = resp.json().get("models", [])
+        names: list[str] = []
+        for m in models:
+            name = str(m.get("name") or "").strip()
+            if name:
+                names.append(name)
+        return names
+    except Exception as exc:
+        logger.warning("Could not list Ollama models: %s", exc)
+        return []
+
+
+def _pull_ollama_model(model_name: str) -> bool:
+    try:
+        logger.info("Pulling missing Ollama model: %s", model_name)
+        resp = http_client.post(
+            f"{OLLAMA_URL}/api/pull",
+            json={"name": model_name, "stream": False},
+            timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_PULL_TIMEOUT),
+        )
+        resp.raise_for_status()
+        return True
+    except Exception as exc:
+        logger.warning("Failed to pull Ollama model %s: %s", model_name, exc)
+        return False
+
+
+def _resolve_ollama_model() -> str:
+    global _ACTIVE_OLLAMA_MODEL
+
+    if _ACTIVE_OLLAMA_MODEL:
+        return _ACTIVE_OLLAMA_MODEL
+
+    available = _ollama_list_models()
+    if OLLAMA_MODEL in available:
+        _ACTIVE_OLLAMA_MODEL = OLLAMA_MODEL
+        return _ACTIVE_OLLAMA_MODEL
+
+    if OLLAMA_MODEL and _pull_ollama_model(OLLAMA_MODEL):
+        _ACTIVE_OLLAMA_MODEL = OLLAMA_MODEL
+        return _ACTIVE_OLLAMA_MODEL
+
+    available = _ollama_list_models()
+    if available:
+        _ACTIVE_OLLAMA_MODEL = available[0]
+        logger.warning(
+            "Configured model %s unavailable, falling back to %s",
+            OLLAMA_MODEL,
+            _ACTIVE_OLLAMA_MODEL,
+        )
+        return _ACTIVE_OLLAMA_MODEL
+
+    _ACTIVE_OLLAMA_MODEL = OLLAMA_MODEL
+    return _ACTIVE_OLLAMA_MODEL
+
+
 def _build_summary_from_transcript(transcript: str) -> str:
     """Build a short fallback summary from transcript sentences."""
     clean = transcript.strip()
@@ -419,14 +494,23 @@ def _ai_fill_form(transcript: str) -> dict:
     Falls back to a basic extraction if the LLM is unreachable.
     """
     try:
-        prompt = _FORM_FILL_PROMPT.format(transcript=transcript)
+        # Truncate very long transcripts for form-fill to keep Ollama fast.
+        # Keep first 1500 + last 500 chars so start (greetings/names) and
+        # end (resolution/farewell) are preserved.
+        trimmed = transcript
+        if len(transcript) > 2500:
+            trimmed = transcript[:1500] + "\n[...middle trimmed...]\n" + transcript[-500:]
+            logger.info("Trimmed transcript from %d to %d chars for form-fill.",
+                        len(transcript), len(trimmed))
+        prompt = _FORM_FILL_PROMPT.format(transcript=trimmed)
+        model_name = _resolve_ollama_model()
         resp = http_client.post(
             f"{OLLAMA_URL}/api/generate",
             json={
-                "model": OLLAMA_MODEL,
+                "model": model_name,
                 "prompt": prompt,
                 "stream": False,
-                "options": {"temperature": 0.2},
+                "options": {"temperature": 0.2, "num_predict": 800},
             },
             timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT),
         )
@@ -434,15 +518,14 @@ def _ai_fill_form(transcript: str) -> dict:
         raw_response = resp.json().get("response", "")
         logger.info("Ollama raw response length: %d chars", len(raw_response))
 
-        # Strip markdown fences if the model wraps the JSON
-        cleaned = raw_response.strip()
-        if cleaned.startswith("```"):
-            cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
-            if cleaned.endswith("```"):
-                cleaned = cleaned[:-3]
-            cleaned = cleaned.strip()
-
-        result = json.loads(cleaned)
+        cleaned = _strip_markdown_fences(raw_response)
+        try:
+            result = json.loads(cleaned)
+        except json.JSONDecodeError:
+            extracted = _extract_json_object(cleaned)
+            if not extracted:
+                raise
+            result = json.loads(extracted)
         return result
 
     except Exception as exc:
@@ -478,6 +561,200 @@ def _fallback_form_fill(transcript: str) -> dict:
     for field in _SCORED_FIELDS:
         result[f"{field}_confidence"] = "low"
     return result
+
+
+def _strip_markdown_fences(text: str) -> str:
+    cleaned = (text or "").strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned[3:]
+        if cleaned.endswith("```"):
+            cleaned = cleaned[:-3]
+        cleaned = cleaned.strip()
+    return cleaned
+
+
+def _extract_json_object(text: str) -> str | None:
+    """Best-effort extraction of first top-level JSON object from model output."""
+    if not text:
+        return None
+    start = text.find("{")
+    if start == -1:
+        return None
+    depth = 0
+    for idx in range(start, len(text)):
+        ch = text[idx]
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start: idx + 1]
+    return None
+
+
+def _looks_like_translation_refusal(text: str) -> bool:
+    value = (text or "").strip().lower()
+    if not value:
+        return False
+    refusal_markers = [
+        "ik kan niet",
+        "kan niet helpen",
+        "i can't",
+        "i cannot",
+        "can't assist",
+        "cannot assist",
+        "niet meewerken",
+        "sorry",
+    ]
+    return any(marker in value for marker in refusal_markers)
+
+
+def _normalize_for_compare(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (text or "").strip().lower())
+
+
+def _as_bool(value: object, default: bool = True) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    if text in ("1", "true", "yes", "on"):
+        return True
+    if text in ("0", "false", "no", "off"):
+        return False
+    return default
+
+
+def _likely_untranslated_english(source: str, translated: str) -> bool:
+    src = (source or "").strip()
+    dst = (translated or "").strip()
+    if not src or not dst:
+        return False
+
+    # If normalized texts are identical and source seems English, treat as untranslated.
+    if _normalize_for_compare(src) != _normalize_for_compare(dst):
+        return False
+
+    english_markers = [
+        " the ", " and ", " please ", " account ", " error ", "password", "cannot", "can't",
+    ]
+    src_l = f" {src.lower()} "
+    return any(marker in src_l for marker in english_markers)
+
+
+def _translate_text_to_dutch(text: str, deadline: float | None = None) -> str:
+    """Translate text to Dutch and return source text on failure."""
+    source = (text or "").strip()
+    if not source:
+        return text
+
+    known_map = {
+        "No summary available.": "Geen samenvatting beschikbaar.",
+        "Not mentioned": "Niet vermeld",
+        "Unable to determine — AI unavailable.": "Niet te bepalen — AI niet beschikbaar.",
+    }
+    if source in known_map:
+        return known_map[source]
+
+    # Chunk long transcripts to avoid single-call timeout failures.
+    chunks: list[str] = []
+    current = ""
+    for sentence in [s.strip() for s in re.split(r"(?<=[.!?])\s+", source) if s.strip()]:
+        if len(sentence) >= TRANSLATION_CHUNK_MAX_CHARS:
+            if current:
+                chunks.append(current)
+                current = ""
+            chunks.extend(
+                [
+                    sentence[i : i + TRANSLATION_CHUNK_MAX_CHARS]
+                    for i in range(0, len(sentence), TRANSLATION_CHUNK_MAX_CHARS)
+                ]
+            )
+            continue
+
+        candidate = f"{current} {sentence}".strip() if current else sentence
+        if current and len(candidate) > TRANSLATION_CHUNK_MAX_CHARS:
+            chunks.append(current)
+            current = sentence
+        else:
+            current = candidate
+
+    if current:
+        chunks.append(current)
+    if not chunks:
+        chunks = [source]
+    translated_parts: list[str] = []
+
+    for idx, chunk in enumerate(chunks):
+        if deadline and time.monotonic() > deadline:
+            logger.warning(
+                "Translation time budget exhausted at chunk %d/%d; keeping remaining text as-is.",
+                idx + 1, len(chunks),
+            )
+            translated_parts.extend(chunks[idx:])
+            break
+
+        prompt = (
+            "You are a professional English-to-Dutch translator. "
+            "Translate the following text to Dutch (nl-NL). "
+            "Output ONLY the Dutch translation. Keep names, IDs, and error codes unchanged. "
+            "Do not add explanation, commentary, or markdown.\n\n"
+            f"TEXT:\n{chunk}"
+        )
+
+        try:
+            model_name = _resolve_ollama_model()
+            resp = http_client.post(
+                f"{OLLAMA_URL}/api/generate",
+                json={
+                    "model": model_name,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.0, "num_predict": 400},
+                },
+                timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_TRANSLATE_READ_TIMEOUT),
+            )
+            resp.raise_for_status()
+            translated = _strip_markdown_fences(resp.json().get("response", "")).strip()
+
+            if _looks_like_translation_refusal(translated):
+                retry_prompt = (
+                    "Task: translation only. Translate to Dutch (nl-NL) literally. "
+                    "Do not refuse, do not provide warnings, do not summarize. "
+                    "Keep unknown tokens as-is. Return translated text only.\n\n"
+                    f"TEXT:\n{chunk}"
+                )
+                retry_resp = http_client.post(
+                    f"{OLLAMA_URL}/api/generate",
+                    json={
+                        "model": model_name,
+                        "prompt": retry_prompt,
+                        "stream": False,
+                        "options": {"temperature": 0.0, "num_predict": 400},
+                    },
+                    timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_TRANSLATE_READ_TIMEOUT),
+                )
+                retry_resp.raise_for_status()
+                retry_text = _strip_markdown_fences(
+                    retry_resp.json().get("response", "")
+                ).strip()
+                if retry_text and not _looks_like_translation_refusal(retry_text):
+                    translated = retry_text
+
+            translated_parts.append(translated or chunk)
+        except Exception as exc:
+            logger.warning(
+                "Dutch translation failed for chunk %s/%s, using original chunk: %s",
+                idx + 1,
+                len(chunks),
+                exc,
+            )
+            translated_parts.append(chunk)
+
+    return "\n".join(part for part in translated_parts if part).strip() or text
 
 
 # ---------------------------------------------------------------------------
@@ -587,6 +864,25 @@ def build_incident_form(data: dict) -> dict:
 
         "metadata": data.get("metadata", {}),
     }
+
+    include_dutch_translation = _as_bool(
+        metadata.get("include_dutch_translation"),
+        default=DEFAULT_INCLUDE_DUTCH_TRANSLATION,
+    )
+
+    if include_dutch_translation:
+        # Only translate short summary fields — NOT the full transcript.
+        # Full transcript translation is the #1 cause of timeouts on CPU.
+        dutch_summary = _translate_text_to_dutch(str(form.get("call_summary", "")))
+        dutch_description = _translate_text_to_dutch(
+            str(form.get("issue", {}).get("description", ""))
+        )
+        form["translated_nl"] = {
+            "language": "nl",
+            "transcript_text": dutch_summary,
+            "call_summary": dutch_summary,
+            "issue_description": dutch_description,
+        }
 
     return form
 
