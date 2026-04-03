@@ -1,12 +1,21 @@
 import json
 import logging
-import os
-import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
 from flask import Flask, jsonify, request
+
+from config import (
+    EVENTS_DIR,
+    FORWARD_TIMEOUT,
+    RECORDING_AUTH_HEADER,
+    RECORDING_AUTH_VALUE,
+    RECORDING_DOWNLOAD_TIMEOUT,
+    TMP_DIR,
+    VOICE_APP_UPLOAD_URL,
+    WEBHOOK_SHARED_TOKEN,
+)
 
 app = Flask(__name__)
 
@@ -15,18 +24,6 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s - %(message)s",
 )
 logger = logging.getLogger(__name__)
-
-VOICE_APP_UPLOAD_URL = os.getenv("VOICE_APP_UPLOAD_URL", "http://localhost:5000/upload")
-WEBHOOK_SHARED_TOKEN = os.getenv("TELEPHONY_WEBHOOK_TOKEN", "")
-EVENTS_DIR = Path(os.getenv("TELEPHONY_EVENTS_DIR", "/data/shared/telephony-events"))
-TMP_DIR = Path(os.getenv("TELEPHONY_TMP_DIR", "/tmp/telephony"))
-RECORDING_DOWNLOAD_TIMEOUT = int(os.getenv("RECORDING_DOWNLOAD_TIMEOUT", "120"))
-FORWARD_TIMEOUT = int(os.getenv("VOICE_APP_FORWARD_TIMEOUT", "900"))
-RECORDING_AUTH_HEADER = os.getenv("RECORDING_AUTH_HEADER", "")
-RECORDING_AUTH_VALUE = os.getenv("RECORDING_AUTH_VALUE", "")
-
-EVENTS_DIR.mkdir(parents=True, exist_ok=True)
-TMP_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _require_auth() -> bool:
