@@ -254,3 +254,40 @@ class VoiceRecordingApp:
                     jsonify({"error": "Database unavailable.", "details": str(exc)}),
                     503,
                 )
+
+        @self.app.route("/email-notifications", methods=["GET"])
+        def get_email_notifications():
+            """Proxy to email-monitor service to get notifications."""
+            try:
+                import requests
+                email_monitor_url = "http://email-monitor:5003/notifications"
+                response = requests.get(email_monitor_url, timeout=5)
+                response.raise_for_status()
+                return jsonify(response.json()), 200
+            except requests.exceptions.ConnectionError:
+                logger.warning("Email monitor service not available")
+                return jsonify({"notifications": []}), 200
+            except Exception as exc:
+                logger.error("Failed to get email notifications: %s", exc)
+                return jsonify({"notifications": []}), 200
+
+        @self.app.route("/email-notifications/clear", methods=["POST"])
+        def clear_email_notifications():
+            """Proxy to email-monitor service to clear notifications."""
+            try:
+                import requests
+                email_monitor_url = "http://email-monitor:5003/notifications/clear"
+                response = requests.post(email_monitor_url, timeout=5)
+                response.raise_for_status()
+                return jsonify(response.json()), 200
+            except requests.exceptions.ConnectionError:
+                logger.warning("Email monitor service not available")
+                return jsonify({"status": "cleared"}), 200
+            except Exception as exc:
+                logger.error("Failed to clear email notifications: %s", exc)
+                return jsonify({"status": "cleared"}), 200
+
+        @self.app.route("/emails", methods=["GET"])
+        def emails_dashboard():
+            """Serve the email notifications dashboard page."""
+            return render_template("emails.html")
