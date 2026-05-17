@@ -12,7 +12,9 @@ from typing import Optional
 from collections import deque
 import threading
 import time
+import jwt
 
+from msal import PublicClientApplication
 from flask import Flask, jsonify, request
 import requests
 from dotenv import load_dotenv
@@ -28,15 +30,19 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Configuration
-GMAIL_ADDRESS = os.getenv("GMAIL_ADDRESS", "fjodsmorod@gmail.com")
-GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD", "fsuf ijxk wmhi drix")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+OLLAMA_CONNECT_TIMEOUT = int(os.getenv("OLLAMA_CONNECT_TIMEOUT", "3"))
+OLLAMA_READ_TIMEOUT = int(os.getenv("OLLAMA_READ_TIMEOUT", "120"))
 VOICE_APP_URL = os.getenv("VOICE_APP_URL", "http://voice-app:5000")
+CLIENT_ID = os.getenv("CLIENT_ID", "cec316e6-66fe-4e58-9bc0-c4f5a32d43a1")
+TENANT_ID = os.getenv("TENANT_ID", "eefd9f50-7c95-4873-ad2e-3f436680b76c")
 
 # In-memory notification queue (last 20 notifications)
 notification_queue = deque(maxlen=20)
 queue_lock = threading.Lock()
+
+GRAPH_TOKEN = None
 
 # Track processed emails to avoid duplicates
 processed_emails = set()
@@ -72,76 +78,84 @@ def clear_notifications():
 # Email Processing
 # ---------------------------------------------------------------------------
 
+def get_graph_token():
 
-def fetch_emails_from_gmail() -> list:
-    """Fetch recent emails from Gmail via IMAP."""
-    import imaplib
-    import email as email_lib
-    from datetime import datetime, timedelta
+    app = PublicClientApplication(
+        CLIENT_ID,
+        authority=f"https://login.microsoftonline.com/{TENANT_ID}"
+    )
 
-    try:
-        # Gmail IMAP server
-        imap = imaplib.IMAP4_SSL("imap.gmail.com", 993)
+    flow = app.initiate_device_flow(scopes=["Mail.Read", "User.Read"])
 
-        # Login using Gmail address + App Password
-        imap.login(GMAIL_ADDRESS, GMAIL_PASSWORD)
+    logger.warning(flow["message"])  # login instruction
 
-        imap.select("INBOX")
+    import time
 
-        # Search recent unseen emails
-        since_date = datetime.utcnow() - timedelta(hours=2)
-        since_str = since_date.strftime("%d-%b-%Y")
+    while True:
+        result = app.acquire_token_by_device_flow(flow)
 
-        status, messages = imap.search(None, f'(UNSEEN SINCE "{since_str}")')
+        if "access_token" in result:
+            return result["access_token"]
 
-        if status != "OK":
-            logger.info("No new emails")
-            return []
+        if result.get("error") == "authorization_pending":
+            time.sleep(flow["interval"])
+            continue
 
-        email_ids = messages[0].split()
-        logger.info(f"Found {len(email_ids)} new emails")
+        raise Exception(result)
 
-        emails = []
+    return result["access_token"]
 
-        for email_id in email_ids[-10:]:
-            try:
-                status, msg_data = imap.fetch(email_id, "(RFC822)")
+def fetch_emails_from_graph(token: str) -> list:
+    """Fetch recent emails using Microsoft Graph API."""
 
-                if status != "OK":
-                    continue
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
 
-                msg = email_lib.message_from_bytes(msg_data[0][1])
+    url = "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=10"
 
-                sender = msg.get("From", "Unknown")
-                subject = decode_header_str(msg.get("Subject", "(no subject)"))
-                body = extract_body(msg)
-                received_at = msg.get("Date", datetime.utcnow().isoformat())
+    response = requests.get(url, headers=headers, timeout=30)
 
-                email_key = f"{sender}:{subject}:{received_at}"
+    print(requests.get(
+        "https://graph.microsoft.com/v1.0/me",
+        headers={"Authorization": f"Bearer {token}"}
+    ).json())
 
-                if email_key not in processed_emails:
-                    emails.append({
-                        "sender": sender,
-                        "subject": subject,
-                        "body": body,
-                        "received_at": received_at,
-                        "key": email_key,
-                    })
+    print(requests.get(
+        "https://graph.microsoft.com/v1.0/me/mailboxSettings",
+        headers={"Authorization": f"Bearer {token}"}
+    ).status_code)
 
-                    processed_emails.add(email_key)
+    logger.error(f"GRAPH STATUS: {response.status_code}")
+    logger.error(f"GRAPH RESPONSE: {response.text}")
 
-            except Exception as e:
-                logger.error(f"Failed to parse email: {e}")
-                continue
+    response.raise_for_status()
 
-        imap.close()
-        imap.logout()
+    data = response.json()
+    messages = data.get("value", [])
 
-        return emails
+    emails = []
 
-    except Exception as e:
-        logger.error(f"Failed to fetch emails from Gmail: {e}", exc_info=True)
-        return []
+    for msg in messages:
+        subject = msg.get("subject", "")
+        sender = (msg.get("from", {}) or {}).get("emailAddress", {}).get("address", "")
+        body = (msg.get("bodyPreview", "") or "")
+        received_at = msg.get("receivedDateTime", "")
+
+        email_key = f"{sender}:{subject}:{received_at}"
+
+        if email_key not in processed_emails:
+            emails.append({
+                "sender": sender,
+                "subject": subject,
+                "body": body,
+                "received_at": received_at,
+                "key": email_key,
+            })
+
+            processed_emails.add(email_key)
+
+    return emails
 
 
 def decode_header_str(header: str) -> str:
@@ -215,7 +229,7 @@ Examples of NON-SERVICE: newsletter, marketing, thank you, appointment
                 "stream": False,
                 "temperature": 0.3,
             },
-            timeout=30,
+            timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT),
         )
         response.raise_for_status()
 
@@ -249,17 +263,18 @@ def add_notification(notification: dict):
 
 
 def sync_emails():
-    """Sync and classify emails, add notifications."""
     logger.info("Starting email sync...")
+
     try:
-        emails = fetch_emails_from_gmail()
+        global GRAPH_TOKEN
+
+        emails = fetch_emails_from_graph(GRAPH_TOKEN)
+
         logger.info(f"Processing {len(emails)} emails")
 
         for email_data in emails:
-            # Classify
             classification = classify_email(email_data["subject"], email_data["body"])
 
-            # Create notification
             notification = {
                 "type": "service" if classification["is_service_related"] else "non_service",
                 "sender": email_data["sender"],
@@ -269,12 +284,6 @@ def sync_emails():
             }
 
             add_notification(notification)
-
-            # Log
-            if classification["is_service_related"]:
-                logger.warning(f"SERVICE EMAIL: {email_data['subject']}")
-            else:
-                logger.info(f"Non-service email: {email_data['subject']}")
 
         logger.info("Email sync completed")
 
@@ -308,6 +317,8 @@ def init_background_sync():
 
 # Initialize on app startup
 try:
+    GRAPH_TOKEN = get_graph_token()
+    print(jwt.decode(GRAPH_TOKEN, options={"verify_signature": False}))
     init_background_sync()
 except Exception as e:
     logger.error(f"Failed to initialize background sync: {e}")

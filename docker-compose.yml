@@ -293,6 +293,8 @@ services:
       OUTLOOK_PASSWORD: ${OUTLOOK_PASSWORD:-changeme}
       OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      OLLAMA_CONNECT_TIMEOUT: ${OLLAMA_CONNECT_TIMEOUT:-3}
+      OLLAMA_READ_TIMEOUT: ${OLLAMA_READ_TIMEOUT:-120}
       VOICE_APP_URL: ${VOICE_APP_URL:-http://voice-app:5000}
     ports:
       - "5003:5003"

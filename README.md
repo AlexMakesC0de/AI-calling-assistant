@@ -364,3 +364,4 @@ docker compose --profile dev down -v
 
 - Full test matrix: [TESTING.md](TESTING.md)
 - Telephony setup and rollout notes: [TELEPHONY_SETUP.md](TELEPHONY_SETUP.md)
+- Connecting Outlook account for service email reading with Graph: [GRAPH_EMAIL_READ.md] (GRAPH_EMAIL_READ.md)
