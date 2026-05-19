@@ -325,6 +325,28 @@ Important `.env` values:
 | `TRANSCRIBER_URL` | `http://transcriber:9000/transcribe` | voice-app |
 | `TELEPHONY_WEBHOOK_TOKEN` | empty | telephony-ingest auth |
 
+### Swapping the Ollama model at runtime
+
+The `transcript-formatter` service reads `OLLAMA_MODEL` from the environment
+on every request, not just at boot. To switch models without rebuilding the
+image:
+
+1. Pull the new model into the Ollama container if it is not already present:
+   ```bash
+   docker exec -it support-ollama ollama pull <new-model>
+   ```
+2. Update `OLLAMA_MODEL` in your `.env` (or override on the command line).
+3. Recreate the formatter service so it picks up the new env value:
+   ```bash
+   docker compose up -d transcript-formatter
+   ```
+
+Any requests already in flight at the time of the recreate retain the model
+they captured at request start. Requests received after the recreate use the
+new model immediately. If the requested model is unavailable and cannot be
+pulled, the formatter falls back to the first model the Ollama container has
+and logs a warning.
+
 ## Troubleshooting
 
 1. `localhost:5000` unreachable:

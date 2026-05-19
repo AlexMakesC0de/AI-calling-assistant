@@ -4,11 +4,13 @@ Ollama LLM integration for the Transcript Formatter service.
 
 import json
 import logging
+import os
+
 import requests
 
 from config import (
     OLLAMA_URL,
-    OLLAMA_MODEL,
+    OLLAMA_MODEL_DEFAULT,
     OLLAMA_CONNECT_TIMEOUT,
     OLLAMA_READ_TIMEOUT,
     FORM_FILL_PROMPT_TEMPLATE,
@@ -18,8 +20,11 @@ from config import (
 logger = logging.getLogger(__name__)
 http_client = requests.Session()
 
-# Module-level cache for resolved model name
-_ACTIVE_OLLAMA_MODEL = None
+# Models we've already confirmed available (or successfully pulled) since boot.
+# OLLAMA_MODEL itself is read fresh from the environment on every request, so
+# operators can swap models by updating the env and triggering a graceful
+# request cycle — in-flight requests keep the value they captured.
+_VERIFIED_MODELS: set[str] = set()
 
 
 def _ollama_list_models() -> list[str]:
@@ -61,33 +66,38 @@ def _pull_ollama_model(model_name: str) -> bool:
 
 
 def _resolve_ollama_model() -> str:
-    """Resolve and cache the active Ollama model name."""
-    global _ACTIVE_OLLAMA_MODEL
+    """Resolve the active Ollama model name for this request.
 
-    if _ACTIVE_OLLAMA_MODEL:
-        return _ACTIVE_OLLAMA_MODEL
+    Reads OLLAMA_MODEL fresh per call so operators can change the env var
+    between requests and have new requests pick up the new model immediately,
+    while any in-flight request keeps the name it already captured.
+    """
+    requested = os.getenv("OLLAMA_MODEL", OLLAMA_MODEL_DEFAULT)
+
+    if requested in _VERIFIED_MODELS:
+        return requested
 
     available = _ollama_list_models()
-    if OLLAMA_MODEL in available:
-        _ACTIVE_OLLAMA_MODEL = OLLAMA_MODEL
-        return _ACTIVE_OLLAMA_MODEL
+    if requested in available:
+        _VERIFIED_MODELS.add(requested)
+        return requested
 
-    if OLLAMA_MODEL and _pull_ollama_model(OLLAMA_MODEL):
-        _ACTIVE_OLLAMA_MODEL = OLLAMA_MODEL
-        return _ACTIVE_OLLAMA_MODEL
+    if requested and _pull_ollama_model(requested):
+        _VERIFIED_MODELS.add(requested)
+        return requested
 
     available = _ollama_list_models()
     if available:
-        _ACTIVE_OLLAMA_MODEL = available[0]
+        fallback = available[0]
         logger.warning(
             "Configured model %s unavailable, falling back to %s",
-            OLLAMA_MODEL,
-            _ACTIVE_OLLAMA_MODEL,
+            requested,
+            fallback,
         )
-        return _ACTIVE_OLLAMA_MODEL
+        _VERIFIED_MODELS.add(fallback)
+        return fallback
 
-    _ACTIVE_OLLAMA_MODEL = OLLAMA_MODEL
-    return _ACTIVE_OLLAMA_MODEL
+    return requested
 
 
 def _strip_markdown_fences(text: str) -> str:

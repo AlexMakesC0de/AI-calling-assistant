@@ -10,7 +10,10 @@ logger = logging.getLogger(__name__)
 
 # Ollama Configuration
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+# Default fallback used when the OLLAMA_MODEL env var is unset. The active
+# model is resolved per request from the environment by ollama_client; this
+# constant is intentionally only the fallback, not a snapshot of the env.
+OLLAMA_MODEL_DEFAULT = "llama3.1:8b"
 OLLAMA_CONNECT_TIMEOUT = float(os.getenv("OLLAMA_CONNECT_TIMEOUT", "3"))
 OLLAMA_READ_TIMEOUT = float(os.getenv("OLLAMA_READ_TIMEOUT", "120"))
 OLLAMA_TRANSLATE_READ_TIMEOUT = float(
