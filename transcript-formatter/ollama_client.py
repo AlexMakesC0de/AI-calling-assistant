@@ -163,10 +163,113 @@ def _fallback_form_fill(transcript: str) -> dict:
     return result
 
 
+def _call_llm_and_validate(
+    prompt: str, model_name: str, *, attempt: str,
+) -> tuple[dict | None, dict | None]:
+    """Send one prompt to Ollama and try to parse + validate the response.
+
+    Returns ``(result, errors)``:
+        * ``result`` is the parsed+validated dict on success, ``None`` on
+          schema validation failure.
+        * ``errors`` is the marshmallow error dict when validation failed,
+          otherwise ``None``.
+
+    JSON parse / network errors are logged to the failure log and raised so
+    the caller can decide whether to retry. ``attempt`` is "initial" or
+    "retry" and is used in failure-log reasons + service-log lines.
+    """
+    logger.info(
+        "Sending LLM extraction %s prompt (%d chars) to model %s",
+        attempt, len(prompt), model_name,
+    )
+    resp = http_client.post(
+        f"{OLLAMA_URL}/api/generate",
+        json={
+            "model": model_name,
+            "prompt": prompt,
+            "stream": False,
+            "options": {"temperature": 0.2, "num_predict": 800},
+        },
+        timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT),
+    )
+    resp.raise_for_status()
+    raw_response = resp.json().get("response", "")
+    logger.info("Ollama %s response length: %d chars", attempt, len(raw_response))
+
+    cleaned = _strip_markdown_fences(raw_response)
+    try:
+        result = json.loads(cleaned)
+    except json.JSONDecodeError:
+        extracted = _extract_json_object(cleaned)
+        if not extracted:
+            log_llm_failure(
+                reason=f"json_parse_{attempt}",
+                model=model_name,
+                prompt=prompt,
+                raw_response=raw_response,
+            )
+            raise
+        try:
+            result = json.loads(extracted)
+        except json.JSONDecodeError:
+            log_llm_failure(
+                reason=f"json_parse_{attempt}",
+                model=model_name,
+                prompt=prompt,
+                raw_response=raw_response,
+            )
+            raise
+
+    validate_start = time.monotonic()
+    is_valid, errors = validate_llm_response(result)
+    validate_ms = (time.monotonic() - validate_start) * 1000
+    logger.info("LLM %s response schema validation took %.1fms", attempt, validate_ms)
+
+    if not is_valid:
+        logger.warning(
+            "LLM %s response failed schema validation: %s", attempt, errors,
+        )
+        log_llm_failure(
+            reason=f"schema_validation_{attempt}",
+            model=model_name,
+            prompt=prompt,
+            raw_response=raw_response,
+            parsed_response=result,
+            schema_errors=errors,
+        )
+        return None, errors
+
+    return result, None
+
+
+def _build_retry_prompt(original_prompt: str, schema_errors: dict) -> str:
+    """Build a clarifying retry prompt from schema validation errors."""
+    lines: list[str] = []
+    for field, messages in schema_errors.items():
+        if isinstance(messages, list):
+            joined = "; ".join(str(m) for m in messages)
+        else:
+            joined = str(messages)
+        lines.append(f"- {field}: {joined}")
+    issue_block = "\n".join(lines) if lines else "- (schema mismatch)"
+
+    prefix = (
+        "Your previous response did not match the required JSON schema. "
+        "These fields failed validation:\n"
+        f"{issue_block}\n\n"
+        "Return ONLY a single JSON object with EVERY required key present "
+        "and using the exact enum values allowed. Do not add markdown "
+        "fences, commentary, or extra text outside the JSON object.\n\n"
+    )
+    return prefix + original_prompt
+
+
 def _ai_fill_form(transcript: str) -> dict:
     """Send the transcript to Ollama and get back the filled form fields.
 
-    Falls back to a basic extraction if the LLM is unreachable.
+    On schema validation failure, retry exactly once with a clarifying
+    prefix added to the original prompt, using the same model. Falls back
+    to a basic extraction if both attempts fail or the LLM is unreachable.
     """
     try:
         # Truncate very long transcripts for form-fill to keep Ollama fast.
@@ -179,63 +282,25 @@ def _ai_fill_form(transcript: str) -> dict:
                         len(transcript), len(trimmed))
         prompt = FORM_FILL_PROMPT_TEMPLATE.replace("{TRANSCRIPT}", trimmed)
         model_name = _resolve_ollama_model()
-        resp = http_client.post(
-            f"{OLLAMA_URL}/api/generate",
-            json={
-                "model": model_name,
-                "prompt": prompt,
-                "stream": False,
-                "options": {"temperature": 0.2, "num_predict": 800},
-            },
-            timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT),
+
+        result, errors = _call_llm_and_validate(
+            prompt, model_name, attempt="initial",
         )
-        resp.raise_for_status()
-        raw_response = resp.json().get("response", "")
-        logger.info("Ollama raw response length: %d chars", len(raw_response))
+        if result is not None:
+            return result
 
-        cleaned = _strip_markdown_fences(raw_response)
-        try:
-            result = json.loads(cleaned)
-        except json.JSONDecodeError:
-            extracted = _extract_json_object(cleaned)
-            if not extracted:
-                log_llm_failure(
-                    reason="json_parse",
-                    model=model_name,
-                    prompt=prompt,
-                    raw_response=raw_response,
-                )
-                raise
-            try:
-                result = json.loads(extracted)
-            except json.JSONDecodeError:
-                log_llm_failure(
-                    reason="json_parse",
-                    model=model_name,
-                    prompt=prompt,
-                    raw_response=raw_response,
-                )
-                raise
+        retry_prompt = _build_retry_prompt(prompt, errors or {})
+        logger.info("Retrying LLM extraction with clarifying prompt")
+        retry_result, _ = _call_llm_and_validate(
+            retry_prompt, model_name, attempt="retry",
+        )
+        if retry_result is not None:
+            logger.info("LLM retry succeeded after initial validation failure")
+            return retry_result
 
-        validate_start = time.monotonic()
-        is_valid, errors = validate_llm_response(result)
-        validate_ms = (time.monotonic() - validate_start) * 1000
-        logger.info("LLM response schema validation took %.1fms", validate_ms)
-        if not is_valid:
-            logger.warning(
-                "LLM response failed schema validation: %s", errors,
-            )
-            log_llm_failure(
-                reason="schema_validation",
-                model=model_name,
-                prompt=prompt,
-                raw_response=raw_response,
-                parsed_response=result,
-                schema_errors=errors,
-            )
-            raise ValueError("LLM response did not match expected schema")
-
-        return result
+        raise ValueError(
+            "LLM retry also failed schema validation; using fallback",
+        )
 
     except Exception as exc:
         logger.warning("AI form-fill failed, using fallback: %s", exc)
