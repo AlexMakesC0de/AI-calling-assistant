@@ -296,6 +296,11 @@ def build_incident_form(data: dict) -> dict:
         "customer_sentiment": ai_fields.get("customer_sentiment", "Neutral"),
         "call_summary": ai_fields.get("call_summary", ""),
 
+        # --- Extraction status ---
+        # True when both the initial LLM call and the retry failed schema
+        # validation and the case was routed for manual engineer review.
+        "extraction_failed": bool(ai_fields.get("extraction_failed", False)),
+
         # --- AI Confidence ---
         "confidence": confidence,
 

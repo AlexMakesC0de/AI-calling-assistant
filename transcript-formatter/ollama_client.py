@@ -17,8 +17,10 @@ from config import (
     FORM_FILL_PROMPT_TEMPLATE,
     SCORED_FIELDS,
 )
-from llm_failures import log_llm_failure
+from llm_failures import log_llm_failure, notify_engineer_extraction_failed
 from schemas import validate_llm_response
+
+PLACEHOLDER_MESSAGE = "AI extraction failed - engineer review required"
 
 logger = logging.getLogger(__name__)
 http_client = requests.Session()
@@ -131,6 +133,38 @@ def _extract_json_object(text: str) -> str | None:
             if depth == 0:
                 return text[start: idx + 1]
     return None
+
+
+def _placeholder_form_fill() -> dict:
+    """Return a clearly-marked placeholder form for engineer review.
+
+    Used when both the initial LLM call and the retry fail schema
+    validation. ``extraction_failed`` is set to True so downstream
+    consumers can route the case for manual review, and every
+    confidence score is "low".
+    """
+    result = {
+        "caller_name": "Not mentioned",
+        "account_or_reference": "Not mentioned",
+        "contact_info": "Not mentioned",
+        "agent_name": "Not mentioned",
+        "issue_category": "General",
+        "issue_priority": "Medium",
+        "issue_description": PLACEHOLDER_MESSAGE,
+        "error_messages": "None",
+        "resolution_status": "Unresolved",
+        "steps_taken": [],
+        "resolution_outcome": PLACEHOLDER_MESSAGE,
+        "follow_up_required": True,
+        "follow_up_actions": ["Engineer review required"],
+        "follow_up_department": "None",
+        "customer_sentiment": "Neutral",
+        "call_summary": PLACEHOLDER_MESSAGE,
+        "extraction_failed": True,
+    }
+    for field in SCORED_FIELDS:
+        result[f"{field}_confidence"] = "low"
+    return result
 
 
 def _fallback_form_fill(transcript: str) -> dict:
@@ -283,25 +317,36 @@ def _ai_fill_form(transcript: str) -> dict:
         prompt = FORM_FILL_PROMPT_TEMPLATE.replace("{TRANSCRIPT}", trimmed)
         model_name = _resolve_ollama_model()
 
-        result, errors = _call_llm_and_validate(
+        result, initial_errors = _call_llm_and_validate(
             prompt, model_name, attempt="initial",
         )
         if result is not None:
             return result
 
-        retry_prompt = _build_retry_prompt(prompt, errors or {})
+        retry_prompt = _build_retry_prompt(prompt, initial_errors or {})
         logger.info("Retrying LLM extraction with clarifying prompt")
-        retry_result, _ = _call_llm_and_validate(
+        retry_result, retry_errors = _call_llm_and_validate(
             retry_prompt, model_name, attempt="retry",
         )
         if retry_result is not None:
             logger.info("LLM retry succeeded after initial validation failure")
             return retry_result
 
-        raise ValueError(
-            "LLM retry also failed schema validation; using fallback",
+        # Both attempts validated as broken — flag the case, notify an
+        # engineer, and return a placeholder so the pipeline keeps moving.
+        logger.warning(
+            "LLM retry also failed schema validation; returning placeholder",
         )
+        notify_engineer_extraction_failed(
+            model=model_name,
+            initial_errors=initial_errors,
+            retry_errors=retry_errors,
+        )
+        return _placeholder_form_fill()
 
     except Exception as exc:
+        # Network / unrecoverable JSON errors fall back to the canned
+        # extraction rather than the engineer-review placeholder, since the
+        # LLM itself was never reached or returned nothing usable.
         logger.warning("AI form-fill failed, using fallback: %s", exc)
         return _fallback_form_fill(transcript)

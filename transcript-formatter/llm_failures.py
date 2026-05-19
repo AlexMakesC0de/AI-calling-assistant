@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+import requests
+
 LLM_FAILURE_LOG_PATH = Path(
     os.getenv(
         "LLM_FAILURE_LOG_PATH",
@@ -28,6 +30,13 @@ LLM_FAILURE_LOG_MAX_BYTES = int(
     os.getenv("LLM_FAILURE_LOG_MAX_BYTES", str(10 * 1024 * 1024))
 )
 LLM_FAILURE_LOG_BACKUP_COUNT = int(os.getenv("LLM_FAILURE_LOG_BACKUP_COUNT", "5"))
+
+EMAIL_URL = os.getenv("EMAIL_URL", "http://email-sender:5002/send")
+ENGINEER_ALERT_EMAIL = os.getenv(
+    "ENGINEER_ALERT_EMAIL",
+    os.getenv("SUPPORT_EMAIL", "support-team@example.com"),
+)
+ENGINEER_ALERT_TIMEOUT = float(os.getenv("ENGINEER_ALERT_TIMEOUT", "5"))
 
 _logger = logging.getLogger(__name__)
 _failure_logger: logging.Logger | None = None
@@ -129,3 +138,64 @@ def log_llm_failure(
         _logger.warning("LLM failure (no dedicated log available): %s", line)
         return
     failure_logger.info(line)
+
+
+def notify_engineer_extraction_failed(
+    *,
+    model: str,
+    initial_errors,
+    retry_errors,
+    request_id: str | None = None,
+) -> bool:
+    """POST an alert to the email-sender so an engineer reviews the form.
+
+    Returns True when the email-sender accepted the request, False otherwise.
+    Network or remote failures never raise — the formatter still has to
+    return a placeholder response to the caller.
+    """
+    subject = "[Transcript Formatter] AI extraction failed — engineer review required"
+    body_lines = [
+        "The transcript formatter could not extract a valid incident form from",
+        "this call. Both the initial LLM attempt and the clarifying retry",
+        "returned responses that failed schema validation.",
+        "",
+        f"Model: {model}",
+    ]
+    if request_id:
+        body_lines.append(f"Request ID: {request_id}")
+    body_lines.extend([
+        "",
+        "Schema errors (initial attempt):",
+        json.dumps(initial_errors, indent=2, default=str),
+        "",
+        "Schema errors (retry attempt):",
+        json.dumps(retry_errors, indent=2, default=str),
+        "",
+        f"Full prompts and raw responses are in {LLM_FAILURE_LOG_PATH}.",
+        "Please open the case in the dashboard and complete the form manually.",
+    ])
+
+    payload = {
+        "to": ENGINEER_ALERT_EMAIL,
+        "subject": subject,
+        "body": "\n".join(body_lines),
+        "html": False,
+    }
+
+    try:
+        resp = requests.post(
+            EMAIL_URL, json=payload, timeout=ENGINEER_ALERT_TIMEOUT,
+        )
+        resp.raise_for_status()
+    except Exception as exc:
+        _logger.warning(
+            "Engineer alert email could not be sent to %s via %s: %s",
+            ENGINEER_ALERT_EMAIL, EMAIL_URL, exc,
+        )
+        return False
+
+    _logger.info(
+        "Engineer alert email dispatched to %s for failed AI extraction",
+        ENGINEER_ALERT_EMAIL,
+    )
+    return True
