@@ -164,7 +164,7 @@ def _ai_fill_form(transcript: str) -> dict:
             trimmed = transcript[:1500] + "\n[...middle trimmed...]\n" + transcript[-500:]
             logger.info("Trimmed transcript from %d to %d chars for form-fill.",
                         len(transcript), len(trimmed))
-        prompt = FORM_FILL_PROMPT_TEMPLATE.format(transcript=trimmed)
+        prompt = FORM_FILL_PROMPT_TEMPLATE.replace("{TRANSCRIPT}", trimmed)
         model_name = _resolve_ollama_model()
         resp = http_client.post(
             f"{OLLAMA_URL}/api/generate",
