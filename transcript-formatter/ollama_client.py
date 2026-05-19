@@ -17,6 +17,7 @@ from config import (
     FORM_FILL_PROMPT_TEMPLATE,
     SCORED_FIELDS,
 )
+from llm_failures import log_llm_failure
 from schemas import validate_llm_response
 
 logger = logging.getLogger(__name__)
@@ -198,8 +199,23 @@ def _ai_fill_form(transcript: str) -> dict:
         except json.JSONDecodeError:
             extracted = _extract_json_object(cleaned)
             if not extracted:
+                log_llm_failure(
+                    reason="json_parse",
+                    model=model_name,
+                    prompt=prompt,
+                    raw_response=raw_response,
+                )
                 raise
-            result = json.loads(extracted)
+            try:
+                result = json.loads(extracted)
+            except json.JSONDecodeError:
+                log_llm_failure(
+                    reason="json_parse",
+                    model=model_name,
+                    prompt=prompt,
+                    raw_response=raw_response,
+                )
+                raise
 
         validate_start = time.monotonic()
         is_valid, errors = validate_llm_response(result)
@@ -208,6 +224,14 @@ def _ai_fill_form(transcript: str) -> dict:
         if not is_valid:
             logger.warning(
                 "LLM response failed schema validation: %s", errors,
+            )
+            log_llm_failure(
+                reason="schema_validation",
+                model=model_name,
+                prompt=prompt,
+                raw_response=raw_response,
+                parsed_response=result,
+                schema_errors=errors,
             )
             raise ValueError("LLM response did not match expected schema")
 
