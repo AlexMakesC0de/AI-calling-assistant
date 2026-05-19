@@ -5,6 +5,7 @@ Ollama LLM integration for the Transcript Formatter service.
 import json
 import logging
 import os
+import time
 
 import requests
 
@@ -16,6 +17,7 @@ from config import (
     FORM_FILL_PROMPT_TEMPLATE,
     SCORED_FIELDS,
 )
+from schemas import validate_llm_response
 
 logger = logging.getLogger(__name__)
 http_client = requests.Session()
@@ -198,6 +200,17 @@ def _ai_fill_form(transcript: str) -> dict:
             if not extracted:
                 raise
             result = json.loads(extracted)
+
+        validate_start = time.monotonic()
+        is_valid, errors = validate_llm_response(result)
+        validate_ms = (time.monotonic() - validate_start) * 1000
+        logger.info("LLM response schema validation took %.1fms", validate_ms)
+        if not is_valid:
+            logger.warning(
+                "LLM response failed schema validation: %s", errors,
+            )
+            raise ValueError("LLM response did not match expected schema")
+
         return result
 
     except Exception as exc:
