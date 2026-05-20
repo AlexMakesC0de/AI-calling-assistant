@@ -1,0 +1,40 @@
+{
+  "id": "01_account_lockout",
+  "title": "Account locked after failed sign-in attempts",
+  "language": "en",
+  "category_focus": "Account",
+  "notes": "Clean happy-path call. Exercises basic identity extraction, enum mapping, and a fully resolved outcome with no follow-up. All names and references are synthetic.",
+  "transcript": [
+    "Speaker 1: Good morning, SSM Repak support, this is Tom speaking. How can I help you today?",
+    "Speaker 2: Hi Tom, my name is Maria Hendriks. I can't log into my account, it keeps saying my account is locked.",
+    "Speaker 1: I'm sorry to hear that, Maria. Could you give me your account reference so I can pull it up?",
+    "Speaker 2: Sure, it's AC-44821.",
+    "Speaker 1: Thank you. And in case we get disconnected, what's the best email to reach you on?",
+    "Speaker 2: It's maria.hendriks@example.com.",
+    "Speaker 1: Great. I can see the account was locked after several failed sign-in attempts this morning. Let me verify your identity and then I'll unlock it for you.",
+    "Speaker 2: Okay, go ahead.",
+    "Speaker 1: I've confirmed your details and reset the failed-attempt counter. I've also sent a password reset link to your email. Could you try logging in now?",
+    "Speaker 2: One moment... yes, I'm in now. That's brilliant, thank you.",
+    "Speaker 1: Perfect. Your account is unlocked and access is fully restored. Anything else I can help with?",
+    "Speaker 2: No, that's everything. Thanks for sorting it so quickly, Tom.",
+    "Speaker 1: You're welcome, Maria. Have a lovely day."
+  ],
+  "expected": {
+    "caller_name": "Maria Hendriks",
+    "account_or_reference": "AC-44821",
+    "contact_info": "maria.hendriks@example.com",
+    "agent_name": "Tom",
+    "issue_category": "Account",
+    "issue_priority": "Medium",
+    "resolution_status": "Resolved",
+    "follow_up_required": false,
+    "follow_up_department": "None",
+    "customer_sentiment": "Satisfied",
+    "issue_description_keywords": ["lock", "account"],
+    "error_messages_keywords": [],
+    "steps_taken_keywords": ["verif", "reset", "unlock"],
+    "resolution_outcome_keywords": ["unlock", "access"],
+    "follow_up_actions_keywords": [],
+    "call_summary_keywords": ["account", "lock"]
+  }
+}

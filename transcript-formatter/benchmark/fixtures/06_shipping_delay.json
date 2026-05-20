@@ -1,0 +1,40 @@
+{
+  "id": "06_shipping_delay",
+  "title": "Order delayed at the depot, logistics query opened",
+  "language": "en",
+  "category_focus": "Shipping",
+  "notes": "Exercises a delayed-but-not-lost distinction the model must not over-state, a partially resolved status, and a follow-up routed to logistics. All data is synthetic.",
+  "transcript": [
+    "Speaker 1: Good afternoon, SSM Repak support, Olivia speaking. How can I help?",
+    "Speaker 2: Hi Olivia, I'm Thomas Klein. My order was supposed to arrive three days ago and there's still no sign of it.",
+    "Speaker 1: Sorry to hear that, Thomas. Could you give me the order reference?",
+    "Speaker 2: It's ORD-50412.",
+    "Speaker 1: Thank you. Let me track that for you... the parcel shows as in transit, but it's been stuck at the regional depot since Monday.",
+    "Speaker 2: So where is it now? I need to know when it'll actually arrive.",
+    "Speaker 1: I can see it hasn't moved, which usually means a sorting delay at the depot. I can't give you a guaranteed delivery date from here. I'll open a query with our logistics team to chase the depot.",
+    "Speaker 2: Can you at least tell me if it's lost?",
+    "Speaker 1: It's not marked as lost, it's delayed, not missing. Logistics will trace it and confirm a new delivery date.",
+    "Speaker 2: Alright. How do I find out the outcome?",
+    "Speaker 1: I'll have them email you. What's your address?",
+    "Speaker 2: thomas.klein@example.com.",
+    "Speaker 1: Thank you. I've tracked the parcel and opened a logistics query to chase the delayed delivery. They'll email you with an updated date."
+  ],
+  "expected": {
+    "caller_name": "Thomas Klein",
+    "account_or_reference": "ORD-50412",
+    "contact_info": "thomas.klein@example.com",
+    "agent_name": "Olivia",
+    "issue_category": "Shipping",
+    "issue_priority": "Medium",
+    "resolution_status": "Partially Resolved",
+    "follow_up_required": true,
+    "follow_up_department": "Logistics",
+    "customer_sentiment": "Neutral",
+    "issue_description_keywords": ["order", "delay"],
+    "error_messages_keywords": [],
+    "steps_taken_keywords": ["track", "query"],
+    "resolution_outcome_keywords": ["logistics", "delay"],
+    "follow_up_actions_keywords": ["logistics", "delivery"],
+    "call_summary_keywords": ["order", "delay", "logistics"]
+  }
+}

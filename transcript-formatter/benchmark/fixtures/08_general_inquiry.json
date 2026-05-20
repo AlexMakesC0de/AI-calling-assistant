@@ -1,0 +1,38 @@
+{
+  "id": "08_general_inquiry",
+  "title": "General question about weekend support hours, caller anonymous",
+  "language": "en",
+  "category_focus": "General",
+  "notes": "Information-only call. The caller declines to identify, so caller_name, account_or_reference and contact_info must stay 'Not mentioned', and there are no troubleshooting steps. This is the main hallucination-resistance fixture. All data is synthetic.",
+  "transcript": [
+    "Speaker 1: SSM Repak support, Isabel speaking. How can I help?",
+    "Speaker 2: Hi, I just have a quick general question. Are your support lines open at the weekend?",
+    "Speaker 1: Of course. Can I take your name or account reference first?",
+    "Speaker 2: I'd rather not give details, it's really just a general question.",
+    "Speaker 1: That's no problem at all. Our phone support runs Monday to Friday, eight to six. At the weekend there's no phone line, but the online help centre and email support are available, and emails are answered on Monday morning.",
+    "Speaker 2: And is the email support address the same as on the website?",
+    "Speaker 1: Yes, the address on the website's contact page is the correct one. Nothing has changed there.",
+    "Speaker 2: Great, that's all I needed to know.",
+    "Speaker 1: Happy to help. Is there anything else?",
+    "Speaker 2: No, that's everything, thanks.",
+    "Speaker 1: Have a good day."
+  ],
+  "expected": {
+    "caller_name": "Not mentioned",
+    "account_or_reference": "Not mentioned",
+    "contact_info": "Not mentioned",
+    "agent_name": "Isabel",
+    "issue_category": "General",
+    "issue_priority": "Low",
+    "resolution_status": "Resolved",
+    "follow_up_required": false,
+    "follow_up_department": "None",
+    "customer_sentiment": "Neutral",
+    "issue_description_keywords": ["weekend", "support"],
+    "error_messages_keywords": [],
+    "steps_taken_keywords": [],
+    "resolution_outcome_keywords": ["weekend", "support"],
+    "follow_up_actions_keywords": [],
+    "call_summary_keywords": ["weekend", "support"]
+  }
+}

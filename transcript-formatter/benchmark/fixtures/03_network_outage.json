@@ -1,0 +1,40 @@
+{
+  "id": "03_network_outage",
+  "title": "Office-wide internet outage, unresolved on call",
+  "language": "en",
+  "category_focus": "Network",
+  "notes": "Provider-side fault the agent cannot fix on the call. Exercises an unresolved status, a high priority stated explicitly, and customer-performed troubleshooting that should not be credited as agent steps. All data is synthetic.",
+  "transcript": [
+    "Speaker 1: SSM Repak technical support, Liam speaking. How can I help today?",
+    "Speaker 2: Hi Liam, it's Priya Sharma. Our entire office has had no internet connection since this morning. Nothing works.",
+    "Speaker 1: That sounds serious, Priya. Can I get your account reference?",
+    "Speaker 2: It's AC-71190. We've got about forty staff who can't do anything. This is really urgent.",
+    "Speaker 1: Understood, I'll treat this as high priority. Have you tried restarting the router?",
+    "Speaker 2: Yes, we restarted it twice and unplugged it for ten minutes. No change.",
+    "Speaker 1: Thanks for trying that. Let me run a line check on your connection... I can see there's an outage affecting your whole area, not just your office.",
+    "Speaker 2: So it's on your side. When will it be fixed?",
+    "Speaker 1: I can't give you a fixed time yet. The fault sits with our network operations team and they're already investigating. I'll raise this against your account so they update you by email.",
+    "Speaker 2: That's not good enough, we're losing a whole day of work.",
+    "Speaker 1: I understand the frustration. What's the best email for the outage updates?",
+    "Speaker 2: priya.sharma@example.com.",
+    "Speaker 1: Thank you. I've logged the outage and flagged your account for priority updates from network operations."
+  ],
+  "expected": {
+    "caller_name": "Priya Sharma",
+    "account_or_reference": "AC-71190",
+    "contact_info": "priya.sharma@example.com",
+    "agent_name": "Liam",
+    "issue_category": "Network",
+    "issue_priority": "High",
+    "resolution_status": "Unresolved",
+    "follow_up_required": true,
+    "follow_up_department": "Network Operations",
+    "customer_sentiment": "Dissatisfied",
+    "issue_description_keywords": ["internet", "connection"],
+    "error_messages_keywords": [],
+    "steps_taken_keywords": ["check", "log"],
+    "resolution_outcome_keywords": ["outage", "network"],
+    "follow_up_actions_keywords": ["update", "outage"],
+    "call_summary_keywords": ["internet", "outage", "network"]
+  }
+}
