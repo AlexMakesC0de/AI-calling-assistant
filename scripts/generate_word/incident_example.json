@@ -1,0 +1,42 @@
+{
+  "form_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "completed_at": "2026-05-20T14:30:00Z",
+  "caller_information": {
+    "name": "Jane Doe",
+    "account_or_reference": "ACCT-123456",
+    "contact_info": "+1-555-123-4567"
+  },
+  "call_details": {
+    "date": "2026-05-20T14:00:00Z",
+    "duration_estimate": "00:12:34",
+    "agent_name": "John Agent"
+  },
+  "issue": {
+    "category": "Technical",
+    "priority": "High",
+    "description": "Caller reported that the mobile app crashes on startup after recent update.",
+    "error_messages": "NullReferenceException at App.Startup()"
+  },
+  "resolution": {
+    "status": "Partially Resolved",
+    "steps_taken": [
+      "Guided caller through app reinstall",
+      "Collected crash logs and created ticket"
+    ],
+    "outcome": "Caller able to open app temporarily; follow-up required after log analysis."
+  },
+  "follow_up": {
+    "required": true,
+    "actions": [
+      "Assign to mobile engineering",
+      "Email caller with ticket number and ETA"
+    ],
+    "department": "Mobile Engineering"
+  },
+  "customer_sentiment": "Dissatisfied",
+  "call_summary": "Caller experienced app crashes after update; agent collected logs and performed a temporary workaround; issue escalated to engineering.",
+  "transcript": {
+    "full_text": "Agent: Hello. Caller: My app crashes on startup after the update. Agent: Let's try reinstalling...",
+    "word_count": 42
+  }
+}
