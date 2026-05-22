@@ -39,3 +39,14 @@ docker-compose.override.yml
 pgadmin_data/
 local-storage/
 
+
+# Personal research / planning artifacts (kept out of the repo)
+*.docx
+epic_keys.json
+jira_epic_mapping_proposal.md
+new_jira_board.md
+orphan*.csv
+sprint_tasks_*.md
+subtask_to_task_map.json
+scripts/generate_twilio_research.py
+scripts/generate_whatsapp_proposal.py
