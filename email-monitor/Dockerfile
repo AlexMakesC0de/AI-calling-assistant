@@ -2,6 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install system dependencies for attachment processing
+# - tesseract-ocr: OCR for image text extraction
+# - ffmpeg: Audio extraction from video files
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

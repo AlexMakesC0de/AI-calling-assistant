@@ -298,6 +298,8 @@ services:
       VOICE_APP_URL: ${VOICE_APP_URL:-http://voice-app:5000}
     ports:
       - "5003:5003"
+    volumes:
+      - ./attachments:/storage/uploads
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5003/health || exit 1"]
       interval: 15s

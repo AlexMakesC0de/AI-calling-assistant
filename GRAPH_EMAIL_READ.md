@@ -181,6 +181,8 @@ Mail.Read
 User.Read
 ```
 
+**Note:** `Mail.Read` includes full permissions to read email attachments (metadata, download content, etc.). No additional attachment-specific permissions are needed.
+
 ---
 
 # 9. Grant Admin Consent
