@@ -1,0 +1,4 @@
+Flask==3.*
+requests==2.*
+gunicorn==22.*
+twilio==9.*
