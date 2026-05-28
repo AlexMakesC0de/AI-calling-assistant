@@ -126,19 +126,46 @@ function MediaRow({
 }) {
   const isImage = media.contentType.startsWith("image/");
   const isAudio = media.contentType.startsWith("audio/");
+  const proxyUrl = `/api/whatsapp/media/${media.id}`;
+
+  if (isImage) {
+    return (
+      <a href={proxyUrl} target="_blank" rel="noopener noreferrer">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={proxyUrl}
+          alt="WhatsApp image"
+          className="max-h-64 rounded-lg"
+          loading="lazy"
+        />
+      </a>
+    );
+  }
+
+  if (isAudio) {
+    return (
+      <audio controls preload="none" className="max-w-full">
+        <source src={proxyUrl} type={media.contentType} />
+      </audio>
+    );
+  }
 
   return (
-    <div
+    <a
+      href={proxyUrl}
+      target="_blank"
+      rel="noopener noreferrer"
       className={cn(
-        "flex items-center gap-2 rounded-md border px-2 py-1 text-xs",
+        "flex items-center gap-2 rounded-md border px-3 py-2 text-xs hover:bg-muted/50 transition-colors",
         outbound ? "border-background/30" : "border-border"
       )}
     >
-      <span>{isImage ? "🖼" : isAudio ? "🎙" : "📎"}</span>
+      <span>📎</span>
       <span className="truncate font-mono">
         {media.localPath ? media.localPath.split("/").pop() : media.contentType}
       </span>
-    </div>
+      <span className="ml-auto shrink-0 text-[10px] opacity-60">Download</span>
+    </a>
   );
 }
 

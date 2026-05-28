@@ -39,7 +39,7 @@ export default async function WhatsAppPage() {
               {conversations.map((conv) => (
                 <TableRow key={conv.id}>
                   <TableCell>
-                    <Link href={`/whatsapp/${conv.id}`} className="hover:underline">
+                    <Link href={`/whatsapp/${conv.id}`} target="_blank" className="hover:underline">
                       <div className="font-medium">{conv.contactName || conv.contactPhone}</div>
                       {conv.contactName && (
                         <div className="font-mono text-xs text-muted-foreground">{conv.contactPhone}</div>
