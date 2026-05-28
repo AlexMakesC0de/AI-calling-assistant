@@ -17,13 +17,28 @@ export async function GET(
     return NextResponse.json({ error: "twilio not configured" }, { status: 503 });
   }
 
-  const res = await fetch(media.twilioUrl, {
-    headers: {
-      Authorization: "Basic " + Buffer.from(`${sid}:${token}`).toString("base64"),
-    },
+  const auth = "Basic " + Buffer.from(`${sid}:${token}`).toString("base64");
+
+  // Twilio media URLs redirect to a CDN. Follow manually so the auth
+  // header isn't stripped on the cross-origin redirect.
+  const initial = await fetch(media.twilioUrl, {
+    headers: { Authorization: auth },
+    redirect: "manual",
   });
+
+  let res: Response;
+  const location = initial.headers.get("location");
+  if (initial.status >= 300 && initial.status < 400 && location) {
+    res = await fetch(location);
+  } else {
+    res = initial;
+  }
+
   if (!res.ok) {
-    return NextResponse.json({ error: "upstream error" }, { status: res.status });
+    return NextResponse.json(
+      { error: "upstream error", status: res.status, url: media.twilioUrl },
+      { status: 502 },
+    );
   }
 
   const body = await res.arrayBuffer();
