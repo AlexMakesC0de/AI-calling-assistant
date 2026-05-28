@@ -46,14 +46,14 @@ export function AppSidebar() {
             <SidebarMenuButton size="lg" asChild>
               <Link href="/">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src="/repak_icon.svg"
-                  alt=""
-                  width={20}
-                  height={24}
-                  className="h-5 w-auto shrink-0"
-                />
-                <span className="font-semibold tracking-tight">Repak</span>
+                {/*<img*/}
+                {/*  src="/repak_icon.svg"*/}
+                {/*  alt=""*/}
+                {/*  width={20}*/}
+                {/*  height={24}*/}
+                {/*  className="h-5 w-auto shrink-0"*/}
+                {/*/>*/}
+                {/*<span className="font-semibold tracking-tight">Repak</span>*/}
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
