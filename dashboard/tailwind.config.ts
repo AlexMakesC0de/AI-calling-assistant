@@ -1,5 +1,9 @@
 import type { Config } from "tailwindcss";
 
+function oklch(variable: string) {
+  return `oklch(var(--${variable}) / <alpha-value>)`;
+}
+
 const config: Config = {
   darkMode: ["class"],
   content: [
@@ -19,34 +23,68 @@ const config: Config = {
         mono: ["var(--font-mono)", "ui-monospace", "monospace"],
       },
       colors: {
-        border: "hsl(var(--border))",
-        input: "hsl(var(--input))",
-        ring: "hsl(var(--ring))",
-        background: "hsl(var(--background))",
-        foreground: "hsl(var(--foreground))",
+        border: oklch("border"),
+        input: oklch("input"),
+        ring: oklch("ring"),
+        background: oklch("background"),
+        foreground: oklch("foreground"),
         primary: {
-          DEFAULT: "hsl(var(--primary))",
-          foreground: "hsl(var(--primary-foreground))",
+          DEFAULT: oklch("primary"),
+          foreground: oklch("primary-foreground"),
         },
         secondary: {
-          DEFAULT: "hsl(var(--secondary))",
-          foreground: "hsl(var(--secondary-foreground))",
+          DEFAULT: oklch("secondary"),
+          foreground: oklch("secondary-foreground"),
         },
         muted: {
-          DEFAULT: "hsl(var(--muted))",
-          foreground: "hsl(var(--muted-foreground))",
+          DEFAULT: oklch("muted"),
+          foreground: oklch("muted-foreground"),
         },
         accent: {
-          DEFAULT: "hsl(var(--accent))",
-          foreground: "hsl(var(--accent-foreground))",
+          DEFAULT: oklch("accent"),
+          foreground: oklch("accent-foreground"),
         },
         card: {
-          DEFAULT: "hsl(var(--card))",
-          foreground: "hsl(var(--card-foreground))",
+          DEFAULT: oklch("card"),
+          foreground: oklch("card-foreground"),
         },
         destructive: {
-          DEFAULT: "hsl(var(--destructive))",
-          foreground: "hsl(var(--destructive-foreground))",
+          DEFAULT: oklch("destructive"),
+          foreground: oklch("destructive-foreground"),
+        },
+        popover: {
+          DEFAULT: oklch("popover"),
+          foreground: oklch("popover-foreground"),
+        },
+        sidebar: {
+          DEFAULT: oklch("sidebar-background"),
+          foreground: oklch("sidebar-foreground"),
+          primary: oklch("sidebar-primary"),
+          "primary-foreground": oklch("sidebar-primary-foreground"),
+          accent: oklch("sidebar-accent"),
+          "accent-foreground": oklch("sidebar-accent-foreground"),
+          border: oklch("sidebar-border"),
+          ring: oklch("sidebar-ring"),
+          "muted-foreground": oklch("sidebar-muted-foreground"),
+        },
+        success: {
+          DEFAULT: oklch("success"),
+          foreground: oklch("success-foreground"),
+        },
+        warning: {
+          DEFAULT: oklch("warning"),
+          foreground: oklch("warning-foreground"),
+        },
+        info: {
+          DEFAULT: oklch("info"),
+          foreground: oklch("info-foreground"),
+        },
+        chart: {
+          "1": oklch("chart-1"),
+          "2": oklch("chart-2"),
+          "3": oklch("chart-3"),
+          "4": oklch("chart-4"),
+          "5": oklch("chart-5"),
         },
       },
       borderRadius: {
