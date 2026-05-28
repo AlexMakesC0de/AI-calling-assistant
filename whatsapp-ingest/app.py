@@ -2,11 +2,9 @@
 WhatsApp Ingest – Twilio WhatsApp prototype.
 
 Receives inbound WhatsApp messages (text, media, voice notes) from the
-Twilio sandbox or a production WhatsApp sender, forwards audio media to
-the existing voice-app /upload pipeline (so transcription + form-fill
-runs unchanged), and exposes /send for outbound text + media replies.
-
-Mirrors the shape of telephony-ingest so ops/runtime are consistent.
+Twilio sandbox or a production WhatsApp sender, persists every message to
+the shared PostgreSQL DB, forwards audio media to the existing voice-app
+/upload pipeline, and exposes /send for outbound text + media replies.
 """
 
 import json
@@ -17,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
+import psycopg2
+import psycopg2.pool
 import requests
 from flask import Flask, Response, jsonify, request
 from requests.auth import HTTPBasicAuth
@@ -32,11 +32,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Configuration
+# ---------------------------------------------------------------------------
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID", "")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN", "")
-TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM", "")  # e.g. whatsapp:+14155238886
+TWILIO_WHATSAPP_FROM = os.getenv("TWILIO_WHATSAPP_FROM", "")
 VALIDATE_SIGNATURE = os.getenv("TWILIO_VALIDATE_SIGNATURE", "true").lower() == "true"
-PUBLIC_BASE_URL = os.getenv("WHATSAPP_PUBLIC_BASE_URL", "")  # used only for signature validation behind a proxy
+PUBLIC_BASE_URL = os.getenv("WHATSAPP_PUBLIC_BASE_URL", "")
 
 VOICE_APP_UPLOAD_URL = os.getenv("VOICE_APP_UPLOAD_URL", "http://voice-app:5000/upload")
 FORWARD_TIMEOUT = int(os.getenv("VOICE_APP_FORWARD_TIMEOUT", "900"))
@@ -50,15 +53,143 @@ AUTO_ACK_TEXT = os.getenv("WHATSAPP_AUTO_ACK_TEXT", "Got it — processing your 
 AUTO_ACK_VOICE = os.getenv("WHATSAPP_AUTO_ACK_VOICE", "Got your voice note — transcribing now.")
 SILENT_REPLY = os.getenv("WHATSAPP_SILENT_REPLY", "false").lower() == "true"
 
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
 EVENTS_DIR.mkdir(parents=True, exist_ok=True)
 MEDIA_DIR.mkdir(parents=True, exist_ok=True)
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 
+# ---------------------------------------------------------------------------
+# Twilio clients
+# ---------------------------------------------------------------------------
 _validator = RequestValidator(TWILIO_AUTH_TOKEN) if TWILIO_AUTH_TOKEN else None
 _twilio: TwilioClient | None = None
 if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
     _twilio = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
 
+# ---------------------------------------------------------------------------
+# DB connection pool (non-fatal if DATABASE_URL is absent)
+# ---------------------------------------------------------------------------
+_pool: psycopg2.pool.ThreadedConnectionPool | None = None
+if DATABASE_URL:
+    try:
+        _pool = psycopg2.pool.ThreadedConnectionPool(1, 5, DATABASE_URL)
+        logger.info("DB connection pool ready")
+    except Exception as exc:
+        logger.warning("DB pool init failed — messages will not be persisted to DB: %s", exc)
+
+
+class _Db:
+    """Context manager: borrow a connection, auto-commit or rollback."""
+
+    def __init__(self):
+        self.conn = None
+
+    def __enter__(self):
+        if _pool:
+            try:
+                self.conn = _pool.getconn()
+            except Exception as exc:
+                logger.warning("DB getconn failed: %s", exc)
+        return self
+
+    def __exit__(self, exc_type, *_):
+        if self.conn:
+            try:
+                if exc_type:
+                    self.conn.rollback()
+                else:
+                    self.conn.commit()
+            finally:
+                _pool.putconn(self.conn)
+                self.conn = None
+
+    @property
+    def available(self) -> bool:
+        return self.conn is not None
+
+    def upsert_conversation(self, contact_phone: str, contact_name: str | None) -> int:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO whatsapp_conversation (contact_phone, contact_name, last_message_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (contact_phone) DO UPDATE
+                  SET last_message_at = NOW(),
+                      contact_name = COALESCE(EXCLUDED.contact_name, whatsapp_conversation.contact_name)
+                RETURNING id
+                """,
+                (contact_phone, contact_name),
+            )
+            return cur.fetchone()[0]
+
+    def insert_message(
+        self,
+        conversation_id: int,
+        twilio_sid: str | None,
+        direction: str,
+        status: str,
+        message_type: str,
+        body: str | None,
+        raw_payload: dict,
+    ) -> int:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO whatsapp_message
+                  (conversation_id, twilio_sid, direction, status, message_type, body, raw_payload)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (
+                    conversation_id,
+                    twilio_sid,
+                    direction,
+                    status,
+                    message_type,
+                    body,
+                    json.dumps(raw_payload),
+                ),
+            )
+            return cur.fetchone()[0]
+
+    def insert_media(
+        self,
+        message_id: int,
+        index: int,
+        twilio_url: str,
+        content_type: str,
+        local_path: str | None,
+        file_size: int | None,
+    ) -> None:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO whatsapp_media
+                  (message_id, media_index, twilio_url, content_type, local_path, file_size_bytes)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (message_id, index, twilio_url, content_type, local_path, file_size),
+            )
+
+    def update_status(self, twilio_sid: str, status: str) -> None:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE whatsapp_message SET status = %s, updated_at = NOW() WHERE twilio_sid = %s",
+                (status, twilio_sid),
+            )
+
+    def set_incident_form(self, message_id: int, incident_form_id: int) -> None:
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "UPDATE whatsapp_message SET incident_form_id = %s, updated_at = NOW() WHERE id = %s",
+                (incident_form_id, message_id),
+            )
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def _safe_stem(value: str) -> str:
     cleaned = "".join(ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in value)
@@ -66,8 +197,6 @@ def _safe_stem(value: str) -> str:
 
 
 def _request_url_for_signature() -> str:
-    # When sitting behind ngrok / a reverse proxy, request.url reflects the
-    # internal scheme/host. Twilio signs the *public* URL, so allow an override.
     if PUBLIC_BASE_URL:
         base = PUBLIC_BASE_URL.rstrip("/")
         return f"{base}{request.path}"
@@ -81,22 +210,33 @@ def _signature_valid() -> bool:
         logger.warning("Signature validation enabled but TWILIO_AUTH_TOKEN is empty — rejecting.")
         return False
     signature = request.headers.get("X-Twilio-Signature", "")
-    # Twilio signs the form-encoded body params for POSTs.
     params = request.form.to_dict(flat=True)
     return _validator.validate(_request_url_for_signature(), params, signature)
 
 
 def _save_event(payload: dict, kind: str) -> Path:
-    message_sid = payload.get("MessageSid") or payload.get("SmsMessageSid") or datetime.now(timezone.utc).isoformat()
-    out = EVENTS_DIR / f"{kind}_{_safe_stem(str(message_sid))}.json"
+    sid = payload.get("MessageSid") or payload.get("SmsMessageSid") or datetime.now(timezone.utc).isoformat()
+    out = EVENTS_DIR / f"{kind}_{_safe_stem(str(sid))}.json"
     with out.open("w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     return out
 
 
+def _infer_message_type(num_media: int, payload: dict) -> str:
+    if num_media == 0:
+        return "text"
+    ct = payload.get("MediaContentType0", "")
+    if ct.startswith("audio/"):
+        return "voice_note"
+    if ct.startswith("image/"):
+        return "image"
+    if ct.startswith("video/"):
+        return "video"
+    return "document"
+
+
 def _download_media(media_url: str, message_sid: str, index: int, content_type: str) -> Path:
     suffix = mimetypes.guess_extension(content_type.split(";")[0].strip()) or ""
-    # WhatsApp voice notes arrive as audio/ogg; guess_extension returns .ogx — prefer .ogg.
     if content_type.startswith("audio/ogg"):
         suffix = ".ogg"
     elif content_type == "audio/mpeg":
@@ -148,7 +288,6 @@ def _forward_audio_to_voice_app(payload: dict, media_path: Path) -> dict:
 
 
 def _persist_media(media_path: Path, message_sid: str, index: int) -> Path:
-    # Keep an archive copy of every inbound attachment for the dashboard / audit.
     dest = MEDIA_DIR / f"{_safe_stem(message_sid)}_{index}{media_path.suffix}"
     media_path.replace(dest)
     return dest
@@ -161,12 +300,17 @@ def _twiml(text: str | None) -> Response:
     return Response(str(twiml), mimetype="application/xml")
 
 
+# ---------------------------------------------------------------------------
+# Routes
+# ---------------------------------------------------------------------------
+
 @app.route("/health", methods=["GET"])
 def health() -> tuple[Response, int]:
     return jsonify({
         "status": "ok",
         "twilio_configured": bool(_twilio),
         "signature_validation": VALIDATE_SIGNATURE,
+        "db_connected": _pool is not None,
     }), 200
 
 
@@ -183,11 +327,26 @@ def inbound() -> Response:
     message_sid = str(payload.get("MessageSid") or "msg")
     from_ = payload.get("From", "")
     body = (payload.get("Body") or "").strip()
+    contact_phone = from_.replace("whatsapp:", "")
+    contact_name = payload.get("ProfileName") or None
+    message_type = _infer_message_type(num_media, payload)
 
-    logger.info("Inbound WhatsApp from %s — body=%r media=%d", from_, body[:80], num_media)
+    logger.info("Inbound WhatsApp from %s — type=%s body=%r media=%d", from_, message_type, body[:80], num_media)
+
+    # Persist conversation + message to DB (non-fatal if DB is down)
+    db_message_id: int | None = None
+    try:
+        with _Db() as db:
+            if db.available:
+                conv_id = db.upsert_conversation(contact_phone, contact_name)
+                db_message_id = db.insert_message(
+                    conv_id, message_sid, "inbound", "received", message_type,
+                    body or None, payload,
+                )
+    except Exception as exc:
+        logger.warning("DB write failed for inbound %s: %s", message_sid, exc)
 
     if num_media == 0:
-        # Plain text message — just ack for now. Hook into your own logic here.
         return _twiml(AUTO_ACK_TEXT if body else None)
 
     audio_results: list[dict] = []
@@ -199,6 +358,7 @@ def inbound() -> Response:
         content_type = payload.get(f"MediaContentType{i}", "")
         if not media_url:
             continue
+
         try:
             tmp_path = _download_media(media_url, message_sid, i, content_type)
         except Exception as exc:
@@ -207,21 +367,48 @@ def inbound() -> Response:
             continue
 
         is_audio = content_type.startswith("audio/")
+        dest: Path | None = None
+        voice_app_result: dict | None = None
+
         if is_audio:
             try:
-                result = _forward_audio_to_voice_app(payload, tmp_path)
-                audio_results.append({"index": i, "voice_app": result})
+                voice_app_result = _forward_audio_to_voice_app(payload, tmp_path)
+                audio_results.append({"index": i, "voice_app": voice_app_result})
             except Exception as exc:
                 logger.exception("Failed forwarding audio %d to voice-app", i)
                 forward_error = str(exc)
-            finally:
-                # Voice-app keeps its own copy; archive ours too for traceability.
-                if tmp_path.exists():
-                    dest = _persist_media(tmp_path, message_sid, i)
-                    archived.append(str(dest))
+            if tmp_path.exists():
+                dest = _persist_media(tmp_path, message_sid, i)
+                archived.append(str(dest))
         else:
             dest = _persist_media(tmp_path, message_sid, i)
             archived.append(str(dest))
+
+        # Persist media row
+        if db_message_id is not None:
+            try:
+                file_size = dest.stat().st_size if dest and dest.exists() else None
+                local_path = str(dest) if dest else None
+                with _Db() as db:
+                    if db.available:
+                        db.insert_media(db_message_id, i, media_url, content_type, local_path, file_size)
+            except Exception as exc:
+                logger.warning("DB media write failed for %s[%d]: %s", message_sid, i, exc)
+
+        # If voice-app returned an incident_form_id, link it immediately
+        if voice_app_result and db_message_id is not None:
+            form_id = (
+                voice_app_result.get("incident_form_id")
+                or voice_app_result.get("form_id")
+                or voice_app_result.get("id")
+            )
+            if isinstance(form_id, int):
+                try:
+                    with _Db() as db:
+                        if db.available:
+                            db.set_incident_form(db_message_id, form_id)
+                except Exception as exc:
+                    logger.warning("DB set_incident_form failed: %s", exc)
 
     logger.info(
         "Processed inbound %s — audio_forwarded=%d archived=%d error=%s",
@@ -243,20 +430,25 @@ def status_callback() -> Response:
         return Response("invalid signature", status=403)
     payload = request.form.to_dict(flat=True)
     _save_event(payload, "status")
-    logger.info(
-        "Status update — sid=%s status=%s error=%s",
-        payload.get("MessageSid"), payload.get("MessageStatus"), payload.get("ErrorCode"),
-    )
+
+    sid = payload.get("MessageSid")
+    status = payload.get("MessageStatus")
+    logger.info("Status update — sid=%s status=%s error=%s", sid, status, payload.get("ErrorCode"))
+
+    if sid and status:
+        try:
+            with _Db() as db:
+                if db.available:
+                    db.update_status(sid, status)
+        except Exception as exc:
+            logger.warning("DB status update failed for %s: %s", sid, exc)
+
     return Response(status=204)
 
 
 @app.route("/send", methods=["POST"])
 def send() -> tuple[Response, int]:
-    """Outbound send. JSON body: {to, body?, media_url?}.
-
-    `to` may be a bare E.164 number ("+15551234567") or already prefixed
-    ("whatsapp:+15551234567"). At least one of body / media_url is required.
-    """
+    """Outbound send. JSON body: {to, body?, media_url?}."""
     if _twilio is None:
         return jsonify({"error": "twilio not configured — set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN"}), 503
     if not TWILIO_WHATSAPP_FROM:
@@ -273,24 +465,38 @@ def send() -> tuple[Response, int]:
         return jsonify({"error": "at least one of `body` or `media_url` is required"}), 400
     if not to.startswith("whatsapp:"):
         to = f"whatsapp:{to}"
-
     if media_url:
-        # Twilio requires a publicly fetchable URL — sanity-check the scheme.
         scheme = urlparse(media_url).scheme
         if scheme not in ("http", "https"):
             return jsonify({"error": "media_url must be http(s)"}), 400
 
     try:
-        kwargs = {"from_": TWILIO_WHATSAPP_FROM, "to": to}
+        kwargs: dict = {"from_": TWILIO_WHATSAPP_FROM, "to": to}
         if body:
             kwargs["body"] = str(body)
         if media_url:
             kwargs["media_url"] = [media_url] if isinstance(media_url, str) else list(media_url)
         msg = _twilio.messages.create(**kwargs)
-        return jsonify({"sid": msg.sid, "status": msg.status, "to": to}), 200
     except Exception as exc:
         logger.exception("Twilio send failed")
         return jsonify({"error": str(exc)}), 502
+
+    # Persist outbound message to DB
+    contact_phone = to.replace("whatsapp:", "")
+    try:
+        with _Db() as db:
+            if db.available:
+                conv_id = db.upsert_conversation(contact_phone, None)
+                db.insert_message(
+                    conv_id, msg.sid, "outbound", msg.status,
+                    "text" if not media_url else "document",
+                    str(body) if body else None,
+                    {"to": to, "body": body, "media_url": media_url},
+                )
+    except Exception as exc:
+        logger.warning("DB write failed for outbound %s: %s", msg.sid, exc)
+
+    return jsonify({"sid": msg.sid, "status": msg.status, "to": to}), 200
 
 
 if __name__ == "__main__":

@@ -216,10 +216,13 @@ services:
       WHATSAPP_EVENTS_DIR: /data/shared/whatsapp-events
       WHATSAPP_MEDIA_DIR: /data/shared/whatsapp-media
       WHATSAPP_TMP_DIR: /tmp/whatsapp
+      DATABASE_URL: postgresql://${POSTGRES_USER:-support}:${POSTGRES_PASSWORD:-support_secret}@database:5432/${POSTGRES_DB:-support_db}
     volumes:
       - ./local-storage/shared:/data/shared
     depends_on:
       voice-app:
+        condition: service_healthy
+      database:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5011/health || exit 1"]

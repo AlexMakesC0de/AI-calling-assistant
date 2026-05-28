@@ -9,6 +9,7 @@ const items = [
   { href: "/upload", label: "Upload", match: (p: string) => p.startsWith("/upload") },
   { href: "/incidents", label: "Incidents", match: (p: string) => p.startsWith("/incidents") },
   { href: "/inbox", label: "Inbox", match: (p: string) => p.startsWith("/inbox") },
+  { href: "/whatsapp", label: "WhatsApp", match: (p: string) => p.startsWith("/whatsapp") },
   { href: "/search", label: "Search", match: (p: string) => p.startsWith("/search") },
   { href: "/system", label: "System", match: (p: string) => p.startsWith("/system") },
 ];

@@ -18,8 +18,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen bg-background font-sans text-foreground antialiased">
         <header className="sticky top-0 z-10 border-b border-border bg-background/80 backdrop-blur">
           <div className="container flex h-14 items-center justify-between">
-            <Link href="/" className="font-medium tracking-tight">
-              Support Pipeline
+            <Link href="/" className="flex items-center gap-2.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/repak_icon.svg"
+                alt=""
+                width={24}
+                height={28}
+                className="h-7 w-auto"
+              />
+              <span className="text-base font-semibold tracking-tight">Repak</span>
             </Link>
             <Nav />
           </div>
