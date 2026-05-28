@@ -77,6 +77,7 @@ model IncidentForm {
   file                File                      @relation(fields: [fileId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   generalInformation  IncidentGeneralInformation?
   transcriptions      IncidentTranscription[]
+  whatsappMessages    WhatsAppMessage[]
 
   @@index([fileId], map: "idx_incident_form_file_id")
   @@map("incident_form")
@@ -111,3 +112,50 @@ model IncidentTranscription {
 
 // twilio_call table is intentionally NOT modeled — the table still exists in
 // the DB for rollback safety, but the dashboard no longer reads or writes it.
+
+model WhatsAppConversation {
+  id             Int                @id @default(autoincrement())
+  contactPhone   String             @unique @map("contact_phone") @db.VarChar(30)
+  contactName    String?            @map("contact_name") @db.VarChar(255)
+  lastMessageAt  DateTime           @default(now()) @map("last_message_at") @db.Timestamptz(6)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  messages       WhatsAppMessage[]
+
+  @@map("whatsapp_conversation")
+}
+
+model WhatsAppMessage {
+  id              Int                    @id @default(autoincrement())
+  conversationId  Int                    @map("conversation_id")
+  twilioSid       String?                @unique @map("twilio_sid") @db.VarChar(64)
+  direction       String                 // "inbound" | "outbound"
+  status          String                 @default("received")
+  messageType     String                 @default("text") @map("message_type")
+  body            String?
+  incidentFormId  Int?                   @map("incident_form_id")
+  rawPayload      Json                   @default("{}") @map("raw_payload")
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  conversation    WhatsAppConversation   @relation(fields: [conversationId], references: [id], onDelete: NoAction)
+  incidentForm    IncidentForm?          @relation(fields: [incidentFormId], references: [id], onDelete: SetNull)
+  media           WhatsAppMedia[]
+
+  @@index([conversationId], map: "idx_wa_msg_conversation")
+  @@index([incidentFormId], map: "idx_wa_msg_incident")
+  @@map("whatsapp_message")
+}
+
+model WhatsAppMedia {
+  id            Int             @id @default(autoincrement())
+  messageId     Int             @map("message_id")
+  mediaIndex    Int             @default(0) @map("media_index") @db.SmallInt
+  twilioUrl     String          @map("twilio_url")
+  contentType   String          @default("application/octet-stream") @map("content_type") @db.VarChar(100)
+  localPath     String?         @map("local_path")
+  fileSizeBytes BigInt?         @map("file_size_bytes")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  message       WhatsAppMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, mediaIndex], map: "uq_wa_media_msg_index")
+  @@map("whatsapp_media")
+}
