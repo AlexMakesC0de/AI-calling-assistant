@@ -23,6 +23,7 @@ from transcript_processor import (
 )
 from content_filter import _apply_content_filter
 from confidence_scoring import _extract_confidence
+from output_filters import apply_pii_redaction, evaluate_confidence_review
 import requests
 
 logger = logging.getLogger(__name__)
@@ -246,8 +247,24 @@ def build_incident_form(data: dict) -> dict:
     # Safety pass to redact blocked terms from high-visibility fields.
     ai_fields = _apply_content_filter(ai_fields, metadata)
 
+    # PII redaction (ISR-355): scrub caller names, phone numbers and emails
+    # from the structured form before downstream consumers persist it.
+    ai_fields = apply_pii_redaction(ai_fields, metadata)
+
     # Extract confidence ratings
     confidence = _extract_confidence(ai_fields)
+
+    # Engineer-review flag (ISR-355): combine low-confidence with the other
+    # quality signals the upstream LLM step may have raised.
+    review = evaluate_confidence_review(confidence, metadata)
+    if ai_fields.get("off_topic_flagged") and \
+            "flagged_off_topic" not in review["reasons"]:
+        review["reasons"].append("flagged_off_topic")
+        review["required"] = True
+    if ai_fields.get("extraction_failed") and \
+            "extraction_failed" not in review["reasons"]:
+        review["reasons"].append("extraction_failed")
+        review["required"] = True
 
     form = {
         "form_id": form_id,
@@ -300,6 +317,13 @@ def build_incident_form(data: dict) -> dict:
         # True when both the initial LLM call and the retry failed schema
         # validation and the case was routed for manual engineer review.
         "extraction_failed": bool(ai_fields.get("extraction_failed", False)),
+
+        # --- Engineer review flag (ISR-355) ---
+        # True when at least one output filter signalled the form should be
+        # reviewed by an engineer before it's actioned. ``review_reasons``
+        # carries the short codes for the dashboard.
+        "flagged_for_review": review["required"],
+        "review_reasons": review["reasons"],
 
         # --- AI Confidence ---
         "confidence": confidence,

@@ -18,6 +18,7 @@ from config import (
     SCORED_FIELDS,
 )
 from llm_failures import log_llm_failure, notify_engineer_extraction_failed
+from output_filters import detect_off_topic
 from schemas import validate_llm_response
 
 PLACEHOLDER_MESSAGE = "AI extraction failed - engineer review required"
@@ -276,6 +277,23 @@ def _call_llm_and_validate(
     return result, None
 
 
+def _build_off_topic_retry_prompt(original_prompt: str) -> str:
+    """Build a retry prompt that asks the model to stay on the transcript.
+
+    Used when the initial response passed schema validation but the
+    off-topic detector judged it unrelated to the call (ISR-355).
+    """
+    prefix = (
+        "Your previous response did not appear to describe the transcript "
+        "above. Re-read the conversation carefully and extract ONLY "
+        "information that is actually present in it. Do not introduce "
+        "names, errors, products, or topics that are not in the transcript. "
+        "If the call did not cover a field, write \"Not mentioned\" (or the "
+        "appropriate enum default) — do not invent content.\n\n"
+    )
+    return prefix + original_prompt
+
+
 def _build_retry_prompt(original_prompt: str, schema_errors: dict) -> str:
     """Build a clarifying retry prompt from schema validation errors."""
     lines: list[str] = []
@@ -321,15 +339,59 @@ def _ai_fill_form(transcript: str) -> dict:
             prompt, model_name, attempt="initial",
         )
         if result is not None:
-            return result
+            off_topic_initial = detect_off_topic(transcript, result)
+            if not off_topic_initial["off_topic"]:
+                return result
+            # Schema OK but off-topic — log and trigger a retry with a
+            # clarifying off-topic prompt instead of a schema-error one
+            # (ISR-355).
+            logger.warning(
+                "LLM initial response flagged off-topic (%s); retrying",
+                off_topic_initial["reason"],
+            )
+            log_llm_failure(
+                reason="off_topic_initial",
+                model=model_name,
+                prompt=prompt,
+                raw_response=json.dumps(result, default=str),
+                parsed_response=result,
+                schema_errors=None,
+            )
 
-        retry_prompt = _build_retry_prompt(prompt, initial_errors or {})
+        if result is None:
+            retry_prompt = _build_retry_prompt(prompt, initial_errors or {})
+        else:
+            retry_prompt = _build_off_topic_retry_prompt(prompt)
+
         logger.info("Retrying LLM extraction with clarifying prompt")
         retry_result, retry_errors = _call_llm_and_validate(
             retry_prompt, model_name, attempt="retry",
         )
         if retry_result is not None:
-            logger.info("LLM retry succeeded after initial validation failure")
+            # Re-check off-topic on the retry. If the model is still drifting
+            # we keep the structured data but flag the form for engineer
+            # review rather than discarding it via the placeholder path —
+            # the data is at least well-formed (ISR-355).
+            off_topic_retry = detect_off_topic(transcript, retry_result)
+            if off_topic_retry["off_topic"]:
+                logger.warning(
+                    "LLM retry response still off-topic (%s); flagging form "
+                    "for engineer review",
+                    off_topic_retry["reason"],
+                )
+                log_llm_failure(
+                    reason="off_topic_retry",
+                    model=model_name,
+                    prompt=retry_prompt,
+                    raw_response=json.dumps(retry_result, default=str),
+                    parsed_response=retry_result,
+                    schema_errors=None,
+                )
+                retry_result["off_topic_flagged"] = True
+            else:
+                logger.info(
+                    "LLM retry succeeded after initial validation failure",
+                )
             return retry_result
 
         # Both attempts validated as broken — flag the case, notify an
