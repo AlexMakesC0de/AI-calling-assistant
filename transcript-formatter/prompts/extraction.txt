@@ -4,12 +4,51 @@ The transcript may be in English, Dutch, or another language. If needed, transla
 
 Your job is to read through the conversation and fill out the incident form below by extracting the relevant information from the transcript.
 
-Fill out EVERY field as accurately as possible based on what was said in the call. If information for a field was not mentioned, write "Not mentioned" for string fields or use your best judgement for enum fields.
+Fill out EVERY field as accurately as possible based on what was said in the call. For free-text fields, write "Not mentioned" when the information was not in the transcript. For ENUM fields (issue_category, issue_priority, resolution_status, customer_sentiment), you must ALWAYS return one of the allowed values listed below — never "Not mentioned", never an empty string. If the call did not state a value directly, infer the most plausible allowed value from context.
 
 For each field, also rate your CONFIDENCE as "high", "medium", or "low":
 - "high" = the information was explicitly stated in the transcript
 - "medium" = you inferred it from context
 - "low" = it was not mentioned and you are guessing
+
+FIELD-SPECIFIC GUIDANCE
+
+issue_category — pick the SINGLE best match:
+- Account: login problems, lockouts, password resets, profile/account-detail changes
+- Billing: charges, invoices, refunds, payment failures, fees
+- Network: internet/connectivity outages, VPN, line faults, slow connection
+- Software: app crashes, software bugs, application features not working
+- Hardware: physical device defects, broken or non-powering equipment
+- Shipping: order delivery, tracking, lost or delayed packages, replacements
+- Technical: technical issues that do NOT fit any of the buckets above
+- General: information-only calls with no actual issue
+
+issue_priority — infer one of Low / Medium / High / Critical:
+- Critical: production down, business at a standstill, customer angry/repeat caller
+- High: explicit urgency, significant impact, work is blocked
+- Medium: standard issue, needs resolution but not blocking
+- Low: information request, minor inconvenience, no business impact
+
+resolution_status — pick the option that matches what happened on THIS call:
+- Resolved: the customer's issue was fully fixed during this call
+- Partially Resolved: a workaround was provided but the ROOT CAUSE is NOT fixed
+- Escalated: the case was explicitly handed to another team or queue (e.g. "I'll escalate this to billing", "the engineering team will take this from here")
+- Unresolved: no fix and no escalation — the issue is still open and unowned
+
+error_messages — exact error codes or formal error message strings the user saw or quoted (e.g. "ERR-5012", "SYS-900 service unavailable"). Do NOT put status descriptions like "Account is locked" or "App keeps crashing" here — those belong in issue_description. Write "None" when no code or formal error message was mentioned.
+
+steps_taken — concrete troubleshooting ACTIONS the agent performed during this call (e.g. "Verified caller's identity", "Reset failed-attempt counter", "Reproduced the bug", "Escalated to engineering"). Do not include the customer's own actions, and do not list general explanations or information given on a pure information call. Return an empty list when no troubleshooting was performed.
+
+follow_up_required / follow_up_actions / follow_up_department:
+- follow_up_required is true when ANY action after the call is needed (a team will contact the customer, a refund will be processed, a part will be shipped, an investigation continues, etc.).
+- follow_up_department: if the agent named a team for follow-up (e.g. "engineering team", "returns team", "network operations"), name that team here (e.g. "Engineering", "Returns", "Network Operations"). Write "None" only when no follow-up team is named.
+
+customer_sentiment — pick from:
+- Very Satisfied: effusive thanks, very positive ("that's brilliant", "fantastic")
+- Satisfied: polite thanks, generally positive ("thanks", "appreciate it")
+- Neutral: calm, transactional, no clear positive or negative tone
+- Dissatisfied: annoyed, critical, expresses frustration
+- Very Dissatisfied: angry, repeat caller, repeated complaints, threatens escalation
 
 Return ONLY a valid JSON object with EXACTLY these keys (no markdown fences, no extra text, no explanation):
 
@@ -28,7 +67,7 @@ Return ONLY a valid JSON object with EXACTLY these keys (no markdown fences, no 
   "issue_priority_confidence": "<high|medium|low>",
   "issue_description": "<clear description of the caller's problem>",
   "issue_description_confidence": "<high|medium|low>",
-  "error_messages": "<any specific error messages/codes mentioned or 'None'>",
+  "error_messages": "<exact error code or message, or 'None'>",
   "error_messages_confidence": "<high|medium|low>",
   "resolution_status": "<one of: Resolved, Partially Resolved, Unresolved, Escalated>",
   "resolution_status_confidence": "<high|medium|low>",
