@@ -11,8 +11,14 @@ const outlookClientSecret = process.env.OUTLOOK_CLIENT_SECRET ?? "";
 const outlookMailbox = process.env.OUTLOOK_MAILBOX ?? "";
 const outlookFolder = process.env.OUTLOOK_FOLDER ?? "Inbox";
 
+const emailAttachmentsDir = (process.env.EMAIL_ATTACHMENTS_DIR ?? "/data/shared/email-attachments").replace(/\/$/, "");
+
+const formatterBaseUrl = (process.env.FORMATTER_URL ?? "http://localhost:5001").replace(/\/$/, "");
+
 export const env = {
   voiceAppUploadUrl: process.env.VOICE_APP_UPLOAD_URL ?? "http://localhost:5000/upload",
+  formatterBaseUrl,
+  emailAttachmentsDir,
   mailpitBaseUrl,
   ollamaBaseUrl,
   ollamaEmbedModel: process.env.OLLAMA_EMBED_MODEL ?? "nomic-embed-text",
