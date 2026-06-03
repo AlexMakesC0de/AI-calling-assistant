@@ -6,15 +6,19 @@ import {
   LayoutDashboard,
   Upload,
   AlertTriangle,
+  FileText,
   Inbox,
   MessageCircle,
   Search,
   Settings,
+  ShieldCheck,
+  LogOut,
 } from "lucide-react"
 
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -24,18 +28,21 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { logout } from "@/app/login/actions"
+import type { SessionPayload } from "@/lib/auth"
 
 const navItems = [
   { href: "/", label: "Overview", icon: LayoutDashboard, match: (p: string) => p === "/" },
   { href: "/upload", label: "Upload", icon: Upload, match: (p: string) => p.startsWith("/upload") },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle, match: (p: string) => p.startsWith("/incidents") },
+  { href: "/generate-word", label: "Generate Word", icon: FileText, match: (p: string) => p.startsWith("/generate-word") },
   { href: "/inbox", label: "Inbox", icon: Inbox, match: (p: string) => p.startsWith("/inbox") },
   { href: "/whatsapp", label: "WhatsApp", icon: MessageCircle, match: (p: string) => p.startsWith("/whatsapp") },
   { href: "/search", label: "Search", icon: Search, match: (p: string) => p.startsWith("/search") },
   { href: "/system", label: "System", icon: Settings, match: (p: string) => p.startsWith("/system") },
 ]
 
-export function AppSidebar() {
+export function AppSidebar({ session }: { session: SessionPayload }) {
   const pathname = usePathname()
 
   return (
@@ -45,15 +52,7 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <Link href="/">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {/*<img*/}
-                {/*  src="/repak_icon.svg"*/}
-                {/*  alt=""*/}
-                {/*  width={20}*/}
-                {/*  height={24}*/}
-                {/*  className="h-5 w-auto shrink-0"*/}
-                {/*/>*/}
-                {/*<span className="font-semibold tracking-tight">Repak</span>*/}
+                <span className="font-semibold tracking-tight">Dashboard</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -81,10 +80,43 @@ export function AppSidebar() {
                   </SidebarMenuItem>
                 )
               })}
+              {session.role === "super_admin" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname.startsWith("/admin")}
+                    tooltip="Accounts"
+                  >
+                    <Link href="/admin">
+                      <ShieldCheck />
+                      <span>Accounts</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <div className="flex items-center gap-2 px-2 py-1.5 text-xs text-muted-foreground truncate">
+              <span className="truncate">{session.name ?? session.email}</span>
+            </div>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <form action={logout}>
+              <SidebarMenuButton asChild tooltip="Sign out">
+                <button type="submit" className="w-full">
+                  <LogOut />
+                  <span>Sign out</span>
+                </button>
+              </SidebarMenuButton>
+            </form>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   )

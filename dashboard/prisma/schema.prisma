@@ -19,6 +19,8 @@ model Account {
   accountId     Int             @id @default(autoincrement()) @map("account_id")
   password      String          @db.VarChar(255)
   accountEmail  String          @unique(map: "account_account_email_key") @map("account_email") @db.VarChar(255)
+  role          String          @default("user") @db.VarChar(20)
+  name          String?         @db.VarChar(255)
   sessions      RecordSession[]
 
   @@map("account")
@@ -158,4 +160,55 @@ model WhatsAppMedia {
 
   @@unique([messageId, mediaIndex], map: "uq_wa_media_msg_index")
   @@map("whatsapp_media")
+}
+
+model EmailConversation {
+  id             Int              @id @default(autoincrement())
+  senderEmail    String           @unique @map("sender_email") @db.VarChar(255)
+  senderName     String?          @map("sender_name") @db.VarChar(255)
+  lastMessageAt  DateTime         @default(now()) @map("last_message_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  messages       EmailMessage[]
+
+  @@map("email_conversation")
+}
+
+model EmailMessage {
+  id                Int                 @id @default(autoincrement())
+  conversationId    Int                 @map("conversation_id")
+  messageIdHeader   String?             @unique @map("message_id_header") @db.VarChar(500)
+  direction         String
+  subject           String?
+  fromEmail         String              @map("from_email") @db.VarChar(255)
+  fromName          String?             @map("from_name") @db.VarChar(255)
+  toEmail           String?             @map("to_email")
+  cc                String?
+  bodyText          String?             @map("body_text")
+  bodyHtml          String?             @map("body_html")
+  headers           Json                @default("{}")
+  envelope          Json                @default("{}")
+  rawPayload        Json                @default("{}") @map("raw_payload")
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  conversation      EmailConversation   @relation(fields: [conversationId], references: [id], onDelete: NoAction)
+  attachments       EmailAttachment[]
+
+  @@index([conversationId], map: "idx_email_msg_conversation")
+  @@map("email_message")
+}
+
+model EmailAttachment {
+  id              Int           @id @default(autoincrement())
+  messageId       Int           @map("message_id")
+  attachmentIndex Int           @default(0) @map("attachment_index") @db.SmallInt
+  externalId      String?       @map("external_id") @db.VarChar(500)
+  fileName        String?       @map("file_name") @db.VarChar(500)
+  contentType     String        @default("application/octet-stream") @map("content_type") @db.VarChar(100)
+  localPath       String?       @map("local_path")
+  fileSizeBytes   BigInt?       @map("file_size_bytes")
+  contentId       String?       @map("content_id") @db.VarChar(255)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  message         EmailMessage  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, attachmentIndex], map: "uq_email_att_msg_index")
+  @@map("email_attachment")
 }
