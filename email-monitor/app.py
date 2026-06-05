@@ -12,15 +12,26 @@ from typing import Optional, Dict, List
 from collections import deque
 import threading
 import time
-import jwt
 import base64
 import tempfile
 from pathlib import Path
 
-from msal import PublicClientApplication
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template, request
 import requests
 from dotenv import load_dotenv
+
+from email_utils import is_support_recipient, strip_html
+from graph_auth import (
+    GraphAuthError,
+    auth_mode,
+    authorization_headers,
+    inbox_messages_url,
+    is_configured,
+    message_attachments_url,
+    uses_graph,
+    verify_mailbox_access,
+)
+from processed_store import ProcessedEmailStore
 
 load_dotenv()
 
@@ -39,8 +50,6 @@ OLLAMA_CONNECT_TIMEOUT = int(os.getenv("OLLAMA_CONNECT_TIMEOUT", "3"))
 OLLAMA_READ_TIMEOUT = int(os.getenv("OLLAMA_READ_TIMEOUT", "120"))
 VOICE_APP_URL = os.getenv("VOICE_APP_URL", "http://voice-app:5000")
 TRANSCRIBER_URL = os.getenv("TRANSCRIBER_URL", "http://transcriber:9000/transcribe")
-CLIENT_ID = os.getenv("CLIENT_ID", "cec316e6-66fe-4e58-9bc0-c4f5a32d43a1")
-TENANT_ID = os.getenv("TENANT_ID", "eefd9f50-7c95-4873-ad2e-3f436680b76c")
 
 # Attachment storage and processing
 ATTACHMENTS_STORAGE = os.getenv("ATTACHMENTS_STORAGE", "/storage/uploads")
@@ -53,8 +62,8 @@ queue_lock = threading.Lock()
 
 GRAPH_TOKEN = None
 
-# Track processed emails to avoid duplicates
-processed_emails = set()
+# Persist processed message IDs across restarts (ISR-241)
+processed_store = ProcessedEmailStore()
 
 # ---------------------------------------------------------------------------
 # Attachment Processing Functions
@@ -246,8 +255,8 @@ def process_attachment(attachment_info: Dict, message_id: str) -> Optional[Dict]
 def get_email_attachments(token: str, message_id: str) -> List[Dict]:
     """Fetch and process all attachments for an email."""
     try:
-        headers = {"Authorization": f"Bearer {token}"}
-        url = f"https://graph.microsoft.com/v1.0/me/messages/{message_id}/attachments"
+        headers = authorization_headers(token)
+        url = message_attachments_url(message_id)
         
         response = requests.get(url, headers=headers, timeout=30)
         response.raise_for_status()
@@ -314,10 +323,93 @@ def get_email_attachments(token: str, message_id: str) -> List[Dict]:
 # ---------------------------------------------------------------------------
 
 
+@app.route("/", methods=["GET"])
+def index_dashboard():
+    return render_template("index.html")
+
+
 @app.route("/health", methods=["GET"])
 def health():
     """Health check endpoint."""
-    return jsonify({"status": "ok", "service": "email-monitor"}), 200
+    mode = None
+    if is_configured():
+        try:
+            mode = auth_mode()
+        except GraphAuthError:
+            mode = "invalid"
+    return jsonify(
+        {
+            "status": "ok",
+            "service": "email-monitor",
+            "auth_mode": mode,
+            "email_configured": is_configured(),
+        }
+    ), 200
+
+
+@app.route("/health/graph", methods=["GET"])
+def health_graph():
+    try:
+        mode = auth_mode()
+    except GraphAuthError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 503
+
+    if mode == "imap":
+        return jsonify(
+            {
+                "status": "skipped",
+                "message": "GRAPH_AUTH_MODE=imap — use GET /health/imap instead.",
+            }
+        ), 200
+
+    if not is_configured():
+        return jsonify(
+            {
+                "status": "not_configured",
+                "message": "See docs/EMAIL_INGEST_SETUP.md or GRAPH_EMAIL_READ.md.",
+            }
+        ), 503
+
+    try:
+        result = verify_mailbox_access()
+        status_code = 200 if result.get("ok") else 502
+        return jsonify({"status": "ok" if result.get("ok") else "error", **result}), status_code
+    except GraphAuthError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 503
+    except Exception as exc:
+        logger.exception("Graph health check failed")
+        return jsonify({"status": "error", "message": str(exc)}), 502
+
+
+@app.route("/health/imap", methods=["GET"])
+def health_imap():
+    if auth_mode() != "imap":
+        return jsonify(
+            {
+                "status": "skipped",
+                "message": "Set GRAPH_AUTH_MODE=imap for this check.",
+            }
+        ), 200
+
+    from imap_client import ImapConfigError, is_configured as imap_ok, verify_access
+
+    if not imap_ok():
+        return jsonify(
+            {
+                "status": "not_configured",
+                "message": "Set OUTLOOK_IMAP_USER and OUTLOOK_IMAP_PASSWORD. See docs/EMAIL_INGEST_SETUP.md.",
+            }
+        ), 503
+
+    try:
+        result = verify_access()
+        status_code = 200 if result.get("ok") else 502
+        return jsonify({"status": "ok" if result.get("ok") else "error", **result}), status_code
+    except ImapConfigError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 503
+    except Exception as exc:
+        logger.exception("IMAP health check failed")
+        return jsonify({"status": "error", "message": str(exc)}), 502
 
 
 @app.route("/notifications", methods=["GET"])
@@ -326,6 +418,19 @@ def get_notifications():
     with queue_lock:
         notifications = list(notification_queue)
     return jsonify({"notifications": notifications}), 200
+
+
+@app.route("/sync", methods=["POST"])
+def trigger_sync():
+    """Run one inbox sync immediately (demo helper)."""
+    if not is_configured():
+        return jsonify({"status": "error", "message": "Email ingest not configured."}), 503
+    try:
+        sync_emails()
+        return jsonify({"status": "ok", "message": "Sync completed — check logs and Mailpit."}), 200
+    except Exception as exc:
+        logger.exception("Manual sync failed")
+        return jsonify({"status": "error", "message": str(exc)}), 502
 
 
 @app.route("/notifications/clear", methods=["POST"])
@@ -384,95 +489,151 @@ def get_attachment_file(filename: str):
 # Email Processing
 # ---------------------------------------------------------------------------
 
-def get_graph_token():
+def get_graph_token() -> str:
+    """Acquire a Microsoft Graph access token (ISR-303)."""
+    from graph_auth import acquire_token
 
-    app = PublicClientApplication(
-        CLIENT_ID,
-        authority=f"https://login.microsoftonline.com/{TENANT_ID}"
-    )
+    return acquire_token()
 
-    flow = app.initiate_device_flow(scopes=["Mail.Read", "User.Read"])
 
-    logger.warning(flow["message"])  # login instruction
-
-    import time
-
-    while True:
-        result = app.acquire_token_by_device_flow(flow)
-
-        if "access_token" in result:
-            return result["access_token"]
-
-        if result.get("error") == "authorization_pending":
-            time.sleep(flow["interval"])
+def _filter_new_imap_messages(items: list) -> list:
+    """Apply dedupe + support filter to IMAP messages (ISR-241)."""
+    emails = []
+    for item in items:
+        message_id = str(item.get("message_id") or item.get("key") or "")
+        if not message_id or processed_store.contains(message_id):
             continue
+        processed_store.mark_processed(message_id)
+        logger.info(
+            "New email detected message_id=%s sender=%s subject=%s",
+            message_id,
+            item.get("sender"),
+            str(item.get("subject", ""))[:80],
+        )
+        emails.append(item)
+    return emails
 
-        raise Exception(result)
 
-    return result["access_token"]
+def fetch_inbox_emails(token: str | None = None) -> list:
+    """Fetch new messages via IMAP or Graph depending on GRAPH_AUTH_MODE."""
+    if auth_mode() == "imap":
+        from imap_client import fetch_unseen_emails
+
+        return _filter_new_imap_messages(fetch_unseen_emails(limit=10))
+
+    if token is None:
+        token = get_graph_token()
+    return fetch_emails_from_graph(token)
+
 
 def fetch_emails_from_graph(token: str) -> list:
-    """Fetch recent emails using Microsoft Graph API."""
+    """Fetch new inbox messages via Microsoft Graph (ISR-241)."""
 
-    headers = {
-        "Authorization": f"Bearer {token}"
-    }
-
-    url = "https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=10&$select=id,subject,from,receivedDateTime,bodyPreview,hasAttachments"
+    headers = authorization_headers(token)
+    url = inbox_messages_url(top=10)
 
     response = requests.get(url, headers=headers, timeout=30)
-
-    print(requests.get(
-        "https://graph.microsoft.com/v1.0/me",
-        headers={"Authorization": f"Bearer {token}"}
-    ).json())
-
-    print(requests.get(
-        "https://graph.microsoft.com/v1.0/me/mailboxSettings",
-        headers={"Authorization": f"Bearer {token}"}
-    ).status_code)
-
-    logger.error(f"GRAPH STATUS: {response.status_code}")
-    logger.error(f"GRAPH RESPONSE: {response.text}")
-
+    logger.info("Graph inbox fetch status: %s", response.status_code)
+    if response.status_code >= 400:
+        logger.error("Graph inbox fetch failed: %s", response.text[:500])
     response.raise_for_status()
 
-    data = response.json()
-    messages = data.get("value", [])
-
+    messages = response.json().get("value", [])
     emails = []
 
     for msg in messages:
+        message_id = msg.get("id", "")
+        if not message_id or processed_store.contains(message_id):
+            if message_id:
+                logger.debug("Skipped duplicate message_id=%s", message_id)
+            continue
+
+        to_addresses = [
+            (r.get("emailAddress") or {}).get("address", "")
+            for r in msg.get("toRecipients") or []
+        ]
+        cc_addresses = [
+            (r.get("emailAddress") or {}).get("address", "")
+            for r in msg.get("ccRecipients") or []
+        ]
+        if not is_support_recipient(to_addresses, cc_addresses):
+            logger.info(
+                "Skipped non-support recipient message_id=%s to=%s",
+                message_id,
+                to_addresses,
+            )
+            processed_store.mark_processed(message_id)
+            continue
+
         subject = msg.get("subject", "")
         sender = (msg.get("from", {}) or {}).get("emailAddress", {}).get("address", "")
-        body = (msg.get("bodyPreview", "") or "")
+        body_obj = msg.get("body") or {}
+        if body_obj.get("contentType") == "html":
+            body = strip_html(body_obj.get("content") or "")
+        else:
+            body = (body_obj.get("content") or msg.get("bodyPreview") or "")
         received_at = msg.get("receivedDateTime", "")
-        message_id = msg.get("id", "")
         has_attachments = msg.get("hasAttachments", False)
 
-        email_key = f"{sender}:{subject}:{received_at}"
+        email_obj = {
+            "sender": sender,
+            "subject": subject,
+            "body": body,
+            "received_at": received_at,
+            "message_id": message_id,
+            "attachments": [],
+        }
 
-        if email_key not in processed_emails:
-            email_obj = {
-                "sender": sender,
-                "subject": subject,
-                "body": body,
-                "received_at": received_at,
-                "key": email_key,
-                "message_id": message_id,
-                "attachments": []
-            }
-            
-            # Fetch attachments if present
-            if has_attachments and message_id:
-                attachments = get_email_attachments(token, message_id)
-                email_obj["attachments"] = attachments
-                logger.info(f"Processed {len(attachments)} attachments for email: {subject}")
-            
-            emails.append(email_obj)
-            processed_emails.add(email_key)
+        if has_attachments and message_id:
+            attachments = get_email_attachments(token, message_id)
+            email_obj["attachments"] = attachments
+            logger.info("Fetched %d attachments for message_id=%s", len(attachments), message_id)
+
+        processed_store.mark_processed(message_id)
+        logger.info(
+            "New email detected message_id=%s sender=%s subject=%s",
+            message_id,
+            sender,
+            subject[:80],
+        )
+        emails.append(email_obj)
 
     return emails
+
+
+def forward_to_voice_app(email_data: dict) -> None:
+    """POST detected email to voice-app; failures must not crash sync loop (ISR-242)."""
+    payload = {
+        "subject": email_data.get("subject", ""),
+        "body": email_data.get("body", ""),
+        "sender": email_data.get("sender", ""),
+        "message_id": email_data.get("message_id"),
+        "received_at": email_data.get("received_at"),
+    }
+    try:
+        response = requests.post(
+            f"{VOICE_APP_URL.rstrip('/')}/ingest/email",
+            json=payload,
+            timeout=120,
+        )
+        if response.status_code >= 400:
+            logger.error(
+                "voice-app ingest failed message_id=%s status=%s body=%s",
+                email_data.get("message_id"),
+                response.status_code,
+                response.text[:300],
+            )
+            return
+        logger.info(
+            "Forwarded message_id=%s to voice-app ingest",
+            email_data.get("message_id"),
+        )
+    except Exception as exc:
+        logger.error(
+            "Pipeline forward failed message_id=%s: %s",
+            email_data.get("message_id"),
+            exc,
+        )
 
 
 def decode_header_str(header: str) -> str:
@@ -590,7 +751,10 @@ def sync_emails():
     try:
         global GRAPH_TOKEN
 
-        emails = fetch_emails_from_graph(GRAPH_TOKEN)
+        if uses_graph() and not GRAPH_TOKEN:
+            GRAPH_TOKEN = get_graph_token()
+
+        emails = fetch_inbox_emails(GRAPH_TOKEN)
 
         logger.info(f"Processing {len(emails)} emails")
 
@@ -647,6 +811,9 @@ def sync_emails():
 
             add_notification(notification)
 
+            # Forward every newly detected email to voice-app pipeline (ISR-242)
+            forward_to_voice_app(email_data)
+
         logger.info("Email sync completed")
 
     except Exception as e:
@@ -677,13 +844,35 @@ def init_background_sync():
     logger.info("Background sync thread started")
 
 
-# Initialize on app startup
-try:
-    GRAPH_TOKEN = get_graph_token()
-    print(jwt.decode(GRAPH_TOKEN, options={"verify_signature": False}))
-    init_background_sync()
-except Exception as e:
-    logger.error(f"Failed to initialize background sync: {e}")
+GRAPH_TOKEN = None
+_background_sync_enabled = os.getenv("EMAIL_ENABLE_BACKGROUND_SYNC", "true").strip().lower() in (
+    "true",
+    "1",
+    "yes",
+    "on",
+)
+
+if is_configured():
+    try:
+        if uses_graph():
+            GRAPH_TOKEN = get_graph_token()
+            logger.info("Microsoft Graph ready (mode=%s).", auth_mode())
+        else:
+            from imap_client import imap_user
+
+            logger.info("Outlook IMAP ready for mailbox=%s.", imap_user())
+        if _background_sync_enabled:
+            init_background_sync()
+        else:
+            logger.info(
+                "Background email sync disabled (EMAIL_ENABLE_BACKGROUND_SYNC=false)."
+            )
+    except Exception as e:
+        logger.error("Failed to initialize email ingest or background sync: %s", e)
+else:
+    logger.warning(
+        "Email ingest not configured. See docs/EMAIL_INGEST_SETUP.md."
+    )
 
 
 if __name__ == "__main__":
