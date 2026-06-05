@@ -36,6 +36,9 @@ docker-compose.override.yml
 # ── Environment secrets ───────────────────────────────────────────────────
 .env
 
+# ── Private / personal notes (not for the repo) ─────────────────────────────
+docs/OUTLOOK_TICKETS_ROADMAP.md
+
 pgadmin_data/
 local-storage/
 
