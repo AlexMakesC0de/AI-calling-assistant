@@ -82,10 +82,10 @@ def transcribe():
         file.save(tmp)
         tmp_path = tmp.name
 
-    # Normalise Ogg/Opus (e.g. WhatsApp voice notes) to 16kHz mono PCM WAV so
-    # both Whisper and the libsndfile-based diarization path can read it. The
-    # original upload is preserved; converted_path is cleaned up alongside it.
-    # (ISR-350)
+    # Normalise Ogg/Opus (e.g. WhatsApp voice notes) to 16kHz mono PCM WAV —
+    # Whisper's native format and a consistent waveform for the diarization
+    # path. The original upload is preserved; converted_path is cleaned up
+    # alongside it. (ISR-350)
     process_path, converted_path = prepare_for_transcription(tmp_path)
 
     try:

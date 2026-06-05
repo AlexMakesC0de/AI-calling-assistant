@@ -1,16 +1,22 @@
 """
 Audio format normalisation for the transcriber service (ISR-350).
 
-WhatsApp voice notes arrive as Ogg/Opus (``.ogg`` / ``.opus``). faster-whisper
-can decode them via its bundled ffmpeg, but the diarization path
-(``diarization.load_audio`` → ``soundfile.read``) relies on libsndfile, which
-does not reliably decode Opus — so an un-converted voice note transcribes but
-fails speaker diarization.
+WhatsApp voice notes arrive as Ogg/Opus (``.ogg`` / ``.opus``). This module
+normalises them to the format Whisper expects natively: 16 kHz, mono,
+signed-16-bit PCM WAV.
 
-This module converts such inputs to the format Whisper and libsndfile both
-handle natively: 16 kHz, mono, signed-16-bit PCM WAV. The original file is
-always preserved — conversion writes a new ``.wav`` beside it and never
-deletes or mutates the source.
+Why normalise rather than pass the Opus straight through:
+  * 16 kHz mono PCM is Whisper's native input, so no per-request resampling
+    or decoding guesswork is needed; the diarization path
+    (``diarization.load_audio``) gets a clean, consistent waveform.
+  * Robustness: the libsndfile build in the current transcriber image
+    (1.2.2) does decode Opus, but older/leaner libsndfile builds do not, and
+    not every ``.ogg`` is Opus. Converting up front removes that variability.
+
+This is a normalisation step, not a fix for a hard failure — an un-converted
+note will still transcribe on the current stack. The original file is always
+preserved: conversion writes a new ``.wav`` beside it and never deletes or
+mutates the source.
 
 ffmpeg is invoked as a subprocess (the binary already ships in the transcriber
 image). No extra Python dependency is added.
