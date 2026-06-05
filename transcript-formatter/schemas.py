@@ -12,6 +12,12 @@ class FormatRequestSchema(Schema):
     Fields:
         transcript: The raw call transcript text (required)
         include_dutch_translation: Whether to include Dutch translation in response
+        metadata: Optional per-request overrides (caller identity fields plus
+            output-filter toggles such as ``redact_pii`` and
+            ``offtopic_threshold``). Declared explicitly so it survives
+            ``unknown = EXCLUDE`` and actually reaches ``build_incident_form``;
+            without this field the per-request overrides advertised by the
+            content and output filters are silently dropped at load time.
     """
     transcript = fields.Str(required=True, validate=validate.Length(min=1))
     include_dutch_translation = fields.Bool(
@@ -19,6 +25,9 @@ class FormatRequestSchema(Schema):
         load_default=None,
         allow_none=True
     )
+    # Free-form dict — the content/output filters do their own per-key parsing
+    # with safe fallbacks, so we deliberately do not constrain keys here.
+    metadata = fields.Dict(required=False, load_default=dict)
 
     class Meta:
         unknown = EXCLUDE
