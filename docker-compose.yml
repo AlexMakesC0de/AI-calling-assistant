@@ -136,6 +136,11 @@ services:
       DB_USER: ${POSTGRES_USER:-support}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-support_secret}
       DB_SAVE_WAIT_SECONDS: ${DB_SAVE_WAIT_SECONDS:-8}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      OLLAMA_CONNECT_TIMEOUT: ${OLLAMA_CONNECT_TIMEOUT:-3}
+      OLLAMA_READ_TIMEOUT: ${OLLAMA_READ_TIMEOUT:-120}
+      CLASSIFIER_UNCLEAR_THRESHOLD: ${CLASSIFIER_UNCLEAR_THRESHOLD:-0.55}
     volumes:
       - ./local-storage/shared:/data/shared
     healthcheck:
@@ -149,6 +154,8 @@ services:
       transcript-formatter:
         condition: service_healthy
       email-sender:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
 
   # -----------------------------------------------------------------------
@@ -288,6 +295,8 @@ services:
       context: ./email-monitor
       dockerfile: Dockerfile
     container_name: support-email-monitor
+    env_file:
+      - .env
     environment:
       OUTLOOK_EMAIL: ${OUTLOOK_EMAIL:-fjodor.smorodins@student.nhlstenden.com}
       OUTLOOK_PASSWORD: ${OUTLOOK_PASSWORD:-changeme}
@@ -296,10 +305,14 @@ services:
       OLLAMA_CONNECT_TIMEOUT: ${OLLAMA_CONNECT_TIMEOUT:-3}
       OLLAMA_READ_TIMEOUT: ${OLLAMA_READ_TIMEOUT:-120}
       VOICE_APP_URL: ${VOICE_APP_URL:-http://voice-app:5000}
+      PROCESSED_EMAILS_STORE: /storage/processed_message_ids.json
+      SUPPORT_INBOX_ADDRESSES: ${SUPPORT_INBOX_ADDRESSES:-}
+      GRAPH_MAILBOX: ${GRAPH_MAILBOX:-}
     ports:
       - "5003:5003"
     volumes:
       - ./attachments:/storage/uploads
+      - ./local-storage/email-monitor:/storage
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5003/health || exit 1"]
       interval: 15s
@@ -307,6 +320,8 @@ services:
       retries: 3
     depends_on:
       ollama:
+        condition: service_healthy
+      voice-app:
         condition: service_healthy
 
   # -----------------------------------------------------------------------

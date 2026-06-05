@@ -1,0 +1,28 @@
+###############################################################################
+# Lightweight stack for ISR-303 — test Outlook IMAP only (no Ollama / full pipeline)
+# Usage: docker compose -f docker-compose.email-test.yml up --build
+###############################################################################
+
+services:
+  email-monitor:
+    build:
+      context: ./email-monitor
+      dockerfile: Dockerfile
+    container_name: support-email-monitor-test
+    ports:
+      - "5003:5003"
+    env_file:
+      - .env
+    environment:
+      GRAPH_AUTH_MODE: imap
+      EMAIL_ENABLE_BACKGROUND_SYNC: "false"
+      GRAPH_MAILBOX: you.support.test@outlook.com
+    volumes:
+      - ./attachments:/storage/uploads
+      - ./local-storage/email-monitor:/storage
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5003/health/imap')\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
