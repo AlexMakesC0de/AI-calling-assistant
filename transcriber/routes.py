@@ -6,6 +6,7 @@ from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
+from audio_convert import prepare_for_transcription
 from config import NUM_SPEAKERS
 from diarization import assign_speakers, load_audio
 from transcribe import transcribe_with_timestamps
@@ -81,11 +82,17 @@ def transcribe():
         file.save(tmp)
         tmp_path = tmp.name
 
+    # Normalise Ogg/Opus (e.g. WhatsApp voice notes) to 16kHz mono PCM WAV —
+    # Whisper's native format and a consistent waveform for the diarization
+    # path. The original upload is preserved; converted_path is cleaned up
+    # alongside it. (ISR-350)
+    process_path, converted_path = prepare_for_transcription(tmp_path)
+
     try:
         # Step 1: Transcribe with word timestamps
         logger.info("Transcribing '%s'...", file.filename)
         words, detected_language, language_probability = transcribe_with_timestamps(
-            tmp_path,
+            process_path,
             max_duration_seconds=max_duration_seconds,
         )
 
@@ -107,7 +114,7 @@ def transcribe():
             try:
                 # Step 2: Load audio for speaker embeddings
                 logger.info("Loading audio for diarization...")
-                waveform, sample_rate = load_audio(tmp_path)
+                waveform, sample_rate = load_audio(process_path)
 
                 # Step 3: Assign speakers
                 logger.info(
@@ -170,3 +177,5 @@ def transcribe():
 
     finally:
         Path(tmp_path).unlink(missing_ok=True)
+        if converted_path:
+            Path(converted_path).unlink(missing_ok=True)
