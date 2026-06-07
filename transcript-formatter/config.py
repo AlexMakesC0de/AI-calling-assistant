@@ -33,6 +33,49 @@ TERM_FILTER_MODE = os.getenv("TERM_FILTER_MODE", "basic").strip().lower()
 TERM_FILTER_CUSTOM_WORDS = os.getenv("TERM_FILTER_CUSTOM_WORDS", "")
 TERM_FILTER_REPLACEMENT = os.getenv("TERM_FILTER_REPLACEMENT", "[redacted]")
 
+# Output Filter Configuration (ISR-355)
+# Each filter is independently toggleable so operators can keep e.g. PII
+# redaction on while turning off-topic detection off if it proves noisy.
+
+# PII redaction: strip caller PII from the form before persistence.
+OUTPUT_FILTER_REDACT_PII = os.getenv(
+    "OUTPUT_FILTER_REDACT_PII", "true",
+).strip().lower() in ("1", "true", "yes", "on")
+OUTPUT_FILTER_PII_FIELDS = [
+    field.strip()
+    for field in os.getenv(
+        "OUTPUT_FILTER_PII_FIELDS", "caller_name,contact_info",
+    ).split(",")
+    if field.strip()
+]
+OUTPUT_FILTER_PII_REPLACEMENT = os.getenv(
+    "OUTPUT_FILTER_PII_REPLACEMENT", "[redacted]",
+)
+
+# Low-confidence review flag: mark the form for engineer review when the
+# LLM's self-rated confidence is too weak to trust automatically.
+OUTPUT_FILTER_LOW_CONF_REVIEW = os.getenv(
+    "OUTPUT_FILTER_LOW_CONF_REVIEW", "true",
+).strip().lower() in ("1", "true", "yes", "on")
+OUTPUT_FILTER_LOW_CONF_OVERALL = os.getenv(
+    "OUTPUT_FILTER_LOW_CONF_OVERALL", "low",
+).strip().lower()
+OUTPUT_FILTER_LOW_CONF_MIN_FIELDS = int(
+    os.getenv("OUTPUT_FILTER_LOW_CONF_MIN_FIELDS", "5"),
+)
+
+# Off-topic detection: reject and retry when the LLM response does not appear
+# to relate to the input transcript (content-token overlap below threshold).
+OUTPUT_FILTER_OFFTOPIC_DETECT = os.getenv(
+    "OUTPUT_FILTER_OFFTOPIC_DETECT", "true",
+).strip().lower() in ("1", "true", "yes", "on")
+OUTPUT_FILTER_OFFTOPIC_THRESHOLD = float(
+    os.getenv("OUTPUT_FILTER_OFFTOPIC_THRESHOLD", "0.10"),
+)
+OUTPUT_FILTER_OFFTOPIC_MIN_TOKENS = int(
+    os.getenv("OUTPUT_FILTER_OFFTOPIC_MIN_TOKENS", "12"),
+)
+
 # Flask Configuration
 TEMPLATE_DIR = os.getenv("TEMPLATE_DIR", "/data/shared/templates")
 
