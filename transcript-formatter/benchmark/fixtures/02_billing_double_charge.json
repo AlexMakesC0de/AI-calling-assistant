@@ -1,0 +1,39 @@
+{
+  "id": "02_billing_double_charge",
+  "title": "Duplicate charge on an invoice, refund escalated",
+  "language": "en",
+  "category_focus": "Billing",
+  "notes": "Escalation path. Exercises a dissatisfied sentiment, an escalated status, and a follow-up routed to a named department. All names and references are synthetic.",
+  "transcript": [
+    "Speaker 1: Thank you for calling SSM Repak, this is Sophie. How can I help?",
+    "Speaker 2: Hi, this is Daniel Brouwer. I've been charged twice for the same invoice and I'm not happy about it.",
+    "Speaker 1: I'm sorry about that, Daniel. Do you have the invoice number to hand?",
+    "Speaker 2: Yes, it's INV-90233. I was charged 149 euros on the third and again on the fifth.",
+    "Speaker 1: Let me check the billing record... I can see both transactions against that invoice, so you're right, there's a duplicate charge.",
+    "Speaker 2: So can you refund it now?",
+    "Speaker 1: I'm not able to authorise the refund directly. Duplicate-charge refunds have to be approved by the billing team, so I'll raise a case and escalate it to them today.",
+    "Speaker 2: How long will that take? This is money I need back.",
+    "Speaker 1: The billing team usually processes these within three to five working days. I'll note it as urgent. Can I take a phone number for the update?",
+    "Speaker 2: It's 06 12345678.",
+    "Speaker 1: Got it. I've logged the duplicate charge and escalated the refund to the billing team. They'll contact you on that number once it's processed.",
+    "Speaker 2: Fine. I'd just like it sorted."
+  ],
+  "expected": {
+    "caller_name": "Daniel Brouwer",
+    "account_or_reference": "INV-90233",
+    "contact_info": "06 12345678",
+    "agent_name": "Sophie",
+    "issue_category": "Billing",
+    "issue_priority": "Medium",
+    "resolution_status": "Escalated",
+    "follow_up_required": true,
+    "follow_up_department": "Billing",
+    "customer_sentiment": "Dissatisfied",
+    "issue_description_keywords": ["charge", "duplicate", "invoice"],
+    "error_messages_keywords": [],
+    "steps_taken_keywords": ["check", "escalat", "log"],
+    "resolution_outcome_keywords": ["escalat", "refund"],
+    "follow_up_actions_keywords": ["refund", "billing"],
+    "call_summary_keywords": ["charge", "refund", "billing"]
+  }
+}

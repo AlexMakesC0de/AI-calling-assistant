@@ -1,0 +1,38 @@
+{
+  "id": "09_dutch_billing",
+  "title": "Dutch-language call about an unrecognised invoice charge",
+  "language": "nl",
+  "category_focus": "Billing",
+  "notes": "Transcript is entirely in Dutch. Exercises the prompt's instruction to translate internally but return English JSON values (proper names excepted). All data is synthetic.",
+  "transcript": [
+    "Speaker 1: Goedemiddag, SSM Repak klantenservice, u spreekt met Femke. Waarmee kan ik u helpen?",
+    "Speaker 2: Hallo Femke, mijn naam is Jeroen Smit. Ik heb een vraag over mijn factuur, er staat een bedrag op dat ik niet herken.",
+    "Speaker 1: Dat zoek ik graag voor u uit. Heeft u een klantnummer of factuurnummer?",
+    "Speaker 2: Ja, mijn klantnummer is KL-77310.",
+    "Speaker 1: Dank u. Ik zie hier een toeslag van twaalf euro vijftig. Dat is de maandelijkse servicekost voor het uitgebreide supportpakket.",
+    "Speaker 2: Oh, dat wist ik niet. Ik dacht dat dat al in het abonnement zat.",
+    "Speaker 1: Het uitgebreide pakket is een aparte optie. Als u dat niet nodig heeft, kan ik het voor u verwijderen, dan vervalt die toeslag vanaf volgende maand.",
+    "Speaker 2: Ja, doe dat maar. Ik gebruik het toch niet.",
+    "Speaker 1: Ik heb het uitgebreide supportpakket verwijderd. De toeslag van twaalf euro vijftig komt niet meer terug op uw volgende factuur.",
+    "Speaker 2: Helder, dank u wel. Dat scheelt.",
+    "Speaker 1: Graag gedaan, meneer Smit. Een fijne dag verder."
+  ],
+  "expected": {
+    "caller_name": "Jeroen Smit",
+    "account_or_reference": "KL-77310",
+    "contact_info": "Not mentioned",
+    "agent_name": "Femke",
+    "issue_category": "Billing",
+    "issue_priority": "Low",
+    "resolution_status": "Resolved",
+    "follow_up_required": false,
+    "follow_up_department": "None",
+    "customer_sentiment": "Satisfied",
+    "issue_description_keywords": ["charge", "invoice", "fee"],
+    "error_messages_keywords": [],
+    "steps_taken_keywords": ["remov", "package"],
+    "resolution_outcome_keywords": ["remov", "charge"],
+    "follow_up_actions_keywords": [],
+    "call_summary_keywords": ["charge", "package"]
+  }
+}

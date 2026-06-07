@@ -1,0 +1,40 @@
+{
+  "id": "05_hardware_defect",
+  "title": "Faulty label printer dead on arrival, warranty replacement",
+  "language": "en",
+  "category_focus": "Hardware",
+  "notes": "Exercises a hardware fault escalated for a warranty replacement, with a follow-up routed to the returns team. All data is synthetic.",
+  "transcript": [
+    "Speaker 1: SSM Repak hardware support, you're speaking with Noah. How can I help?",
+    "Speaker 2: Hello Noah, this is Hannah de Jong. The label printer I received last week won't power on at all.",
+    "Speaker 1: I'm sorry about that, Hannah. Can I get the order reference for the printer?",
+    "Speaker 2: It's ORD-66721.",
+    "Speaker 1: Thank you. Let's check a few things. Is the power cable fully seated at both ends, and have you tried a different wall socket?",
+    "Speaker 2: Yes, I tried two sockets and a second power cable. The unit is completely dead, no lights, no sound.",
+    "Speaker 1: That points to a faulty unit rather than a power issue. Since it's under a week old it's covered by warranty. I can't issue the replacement from this desk though, it has to go through our returns team.",
+    "Speaker 2: So I have to wait again? I needed this printer for a deadline.",
+    "Speaker 1: I understand, and I'll mark the case as high priority. I'll escalate it to the returns team so they can arrange a replacement and a collection of the faulty unit.",
+    "Speaker 2: Fine. How will I hear back?",
+    "Speaker 1: They'll call you to arrange it. Is this number the best one?",
+    "Speaker 2: Yes, 06 87654321.",
+    "Speaker 1: Got it. I've escalated a warranty replacement to the returns team and they'll contact you on that number."
+  ],
+  "expected": {
+    "caller_name": "Hannah de Jong",
+    "account_or_reference": "ORD-66721",
+    "contact_info": "06 87654321",
+    "agent_name": "Noah",
+    "issue_category": "Hardware",
+    "issue_priority": "High",
+    "resolution_status": "Escalated",
+    "follow_up_required": true,
+    "follow_up_department": "Returns",
+    "customer_sentiment": "Dissatisfied",
+    "issue_description_keywords": ["printer", "power"],
+    "error_messages_keywords": [],
+    "steps_taken_keywords": ["socket", "escalat"],
+    "resolution_outcome_keywords": ["replacement", "returns"],
+    "follow_up_actions_keywords": ["replacement", "collect"],
+    "call_summary_keywords": ["printer", "replacement"]
+  }
+}

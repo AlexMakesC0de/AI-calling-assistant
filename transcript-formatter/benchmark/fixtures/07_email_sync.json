@@ -1,0 +1,41 @@
+{
+  "id": "07_email_sync",
+  "title": "Work email not syncing on phone, fixed on call",
+  "language": "en",
+  "category_focus": "Technical",
+  "notes": "Resolved low-priority call. Caller gives no contact detail, so contact_info must stay 'Not mentioned' - exercises the hallucination check. All data is synthetic.",
+  "transcript": [
+    "Speaker 1: SSM Repak support, this is Lucas. How can I help you today?",
+    "Speaker 2: Hi Lucas, my name is Sophie Bakker. My work email has stopped syncing on my phone, new messages only show up when I open it on my laptop.",
+    "Speaker 1: Happy to help with that, Sophie. Can I take your account reference?",
+    "Speaker 2: Sure, AC-28004.",
+    "Speaker 1: Thanks. It's not urgent if the laptop still works, so we'll just get the phone sorted. Which phone are you using?",
+    "Speaker 2: An Android phone, the standard mail app.",
+    "Speaker 1: Let's start simple. Open the mail app settings, find the account, and toggle Sync off and then on again.",
+    "Speaker 2: Okay... I've done that. Nothing new yet.",
+    "Speaker 1: Now check that background data is allowed for the mail app, sometimes a battery-saver setting blocks it.",
+    "Speaker 2: Oh, you're right, background data was switched off. I've turned it on now... and the new emails are coming through.",
+    "Speaker 1: That was the cause, the battery saver had blocked background sync.",
+    "Speaker 2: That's fantastic, thank you so much. I'd been struggling with that for a week.",
+    "Speaker 1: Glad it's sorted. Your email is syncing normally again. Anything else?",
+    "Speaker 2: No, that's perfect. Really appreciate it, Lucas."
+  ],
+  "expected": {
+    "caller_name": "Sophie Bakker",
+    "account_or_reference": "AC-28004",
+    "contact_info": "Not mentioned",
+    "agent_name": "Lucas",
+    "issue_category": "Technical",
+    "issue_priority": "Low",
+    "resolution_status": "Resolved",
+    "follow_up_required": false,
+    "follow_up_department": "None",
+    "customer_sentiment": "Very Satisfied",
+    "issue_description_keywords": ["email", "sync"],
+    "error_messages_keywords": [],
+    "steps_taken_keywords": ["sync", "background"],
+    "resolution_outcome_keywords": ["sync", "background"],
+    "follow_up_actions_keywords": [],
+    "call_summary_keywords": ["email", "sync", "phone"]
+  }
+}
