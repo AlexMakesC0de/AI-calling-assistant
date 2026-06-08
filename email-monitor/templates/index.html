@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Repak Email Monitor</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 1.5rem; }
+    .muted { color: #94a3b8; font-size: 0.9rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 20px 0; }
+    .card { background: #1e293b; border-radius: 10px; padding: 16px; }
+    .ok { color: #4ade80; } .bad { color: #f87171; } .warn { color: #fbbf24; }
+    .badge { display: inline-block; padding: 4px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; }
+    .badge-service { background: #166534; color: #bbf7d0; }
+    .badge-other { background: #374151; color: #d1d5db; }
+    .email { background: #1e293b; border-radius: 10px; padding: 14px; margin-bottom: 10px; border-left: 4px solid #64748b; }
+    .email.service { border-left-color: #22c55e; }
+    button { background: #3b82f6; color: white; border: 0; padding: 8px 14px; border-radius: 8px; cursor: pointer; }
+    button.secondary { background: #475569; }
+    code { background: #334155; padding: 2px 6px; border-radius: 4px; font-size: 0.85rem; }
+    ul.links { line-height: 1.8; padding-left: 20px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Outlook email monitor</h1>
+    <p class="muted">Port 5003 — <span id="mailbox">…</span> · refreshes every 10s</p>
+
+    <div class="grid">
+      <div class="card">
+        <div class="muted">Service</div>
+        <div id="serviceStatus">…</div>
+      </div>
+      <div class="card">
+        <div class="muted">Outlook connection</div>
+        <div id="outlookStatus">…</div>
+      </div>
+      <div class="card">
+        <div class="muted">Emails classified</div>
+        <div style="font-size: 1.4rem; font-weight: 700;" id="totalCount">0</div>
+        <div class="muted"><span id="serviceCount">0</span> support · <span id="otherCount">0</span> other</div>
+      </div>
+    </div>
+
+    <p>
+      <button type="button" onclick="refreshAll()">Refresh now</button>
+      <button type="button" class="secondary" onclick="clearAll()">Clear list</button>
+      <button type="button" class="secondary" onclick="testImap()">Test Outlook login</button>
+    </p>
+
+    <h2 style="font-size: 1.1rem; margin-top: 28px;">Classified emails</h2>
+    <div id="notifications"><p class="muted">Loading…</p></div>
+
+    <div class="card" style="margin-top: 24px;">
+      <strong>URLs on this service</strong>
+      <ul class="links">
+        <li><a href="/" style="color:#93c5fd">/</a> — this page</li>
+        <li><a href="/notifications" style="color:#93c5fd">/notifications</a> — raw JSON</li>
+        <li><a href="/health/imap" style="color:#93c5fd">/health/imap</a> — connection test JSON</li>
+      </ul>
+      <p class="muted" style="margin-top:12px">Full UI with voice-app: <code>http://127.0.0.1:5000/emails</code> (needs <code>docker compose up</code>)</p>
+    </div>
+  </div>
+  <script>
+    async function loadHealth() {
+      const r = await fetch('/health');
+      const d = await r.json();
+      document.getElementById('serviceStatus').innerHTML =
+        `<span class="ok">Running</span><br><span class="muted">mode: ${d.auth_mode || 'not set'}</span>`;
+      document.getElementById('mailbox').textContent = d.auth_mode === 'imap' ? 'IMAP home test' : (d.auth_mode || 'configure .env');
+    }
+    async function testImap() {
+      document.getElementById('outlookStatus').textContent = 'Testing…';
+      try {
+        const r = await fetch('/health/imap');
+        const d = await r.json();
+        if (d.ok) {
+          document.getElementById('outlookStatus').innerHTML =
+            `<span class="ok">Connected</span><br><span class="muted">${d.mailbox || ''} · ${d.inbox_messages ?? '?'} msgs in inbox</span>`;
+        } else {
+          document.getElementById('outlookStatus').innerHTML =
+            `<span class="bad">Failed</span><br><span class="muted">${d.message || d.error || JSON.stringify(d)}</span>`;
+        }
+      } catch (e) {
+        document.getElementById('outlookStatus').innerHTML = `<span class="bad">Error</span><br><span class="muted">${e}</span>`;
+      }
+    }
+    async function loadNotifications() {
+      const r = await fetch('/notifications');
+      const d = await r.json();
+      const list = d.notifications || [];
+      document.getElementById('totalCount').textContent = list.length;
+      const svc = list.filter(n => n.type === 'service').length;
+      document.getElementById('serviceCount').textContent = svc;
+      document.getElementById('otherCount').textContent = list.length - svc;
+      const el = document.getElementById('notifications');
+      if (!list.length) {
+        el.innerHTML = '<p class="muted">No emails yet. Send a test to your inbox (leave unread for IMAP). Background sync must be on.</p>';
+        return;
+      }
+      el.innerHTML = list.map(n => `
+        <div class="email ${n.type === 'service' ? 'service' : ''}">
+          <span class="badge ${n.type === 'service' ? 'badge-service' : 'badge-other'}">${n.type === 'service' ? 'SUPPORT' : 'OTHER'}</span>
+          <strong>${escapeHtml(n.subject || '(no subject)')}</strong>
+          <div class="muted">${escapeHtml(n.sender || '')} · ${escapeHtml(n.timestamp || '')}</div>
+          <div style="margin-top:8px;font-size:0.9rem">${escapeHtml(n.body_preview || '')}</div>
+          ${n.reason ? `<div class="muted" style="margin-top:6px">AI: ${escapeHtml(n.reason)}</div>` : ''}
+        </div>`).join('');
+    }
+    function escapeHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    async function clearAll() {
+      if (!confirm('Clear all notifications?')) return;
+      await fetch('/notifications/clear', { method: 'POST' });
+      refreshAll();
+    }
+    async function refreshAll() {
+      await loadHealth();
+      await testImap();
+      await loadNotifications();
+    }
+    refreshAll();
+    setInterval(refreshAll, 10000);
+  </script>
+</body>
+</html>
