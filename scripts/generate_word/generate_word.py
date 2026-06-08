@@ -99,9 +99,28 @@ def replace_tokens_in_doc(doc: Document, data: Any):
 # Image / attachment embedding (ISR-318)
 # ---------------------------------------------------------------------------
 
-# Raster image types we embed inline. Other attachment types (PDF, etc.) are
-# only referenced by name here; full non-image handling is ISR-319.
+# Raster image types we embed inline. Non-image attachments are referenced by
+# filename + type + path (ISR-319).
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff"}
+
+# Human-readable type labels for common non-image attachments (ISR-319).
+FILE_TYPE_LABELS = {
+	".pdf": "PDF",
+	".doc": "DOC", ".docx": "DOCX", ".rtf": "RTF", ".odt": "ODT", ".txt": "TXT",
+	".xls": "XLS", ".xlsx": "XLSX", ".csv": "CSV", ".ods": "ODS",
+	".ppt": "PPT", ".pptx": "PPTX",
+	".zip": "ZIP", ".rar": "RAR", ".7z": "7Z",
+	".mp4": "MP4", ".mov": "MOV", ".avi": "AVI", ".mkv": "MKV",
+	".mp3": "MP3", ".wav": "WAV", ".ogg": "OGG", ".m4a": "M4A",
+}
+
+
+def _file_type_label(path):
+	"""Short type label for a non-image attachment (e.g. PDF, DOCX, FILE)."""
+	ext = os.path.splitext(path)[1].lower()
+	if ext in FILE_TYPE_LABELS:
+		return FILE_TYPE_LABELS[ext]
+	return ext[1:].upper() if ext else "FILE"
 
 # Optional anchor an operator can place in the template to control where the
 # attachments land. When absent, the section is appended at the end.
@@ -170,8 +189,21 @@ def _embed_image(paragraph, img_path, usable_width):
 	return shape
 
 
+def _render_file_reference(paragraph, path, label):
+	"""Reference a non-image attachment as 'Filename (PATH)' with its type.
+
+	Format (ISR-319): a bold filename, a clear type label, then the locally
+	accessible path in parentheses, e.g.::
+
+	    crash-report.pdf  [PDF]  (media/crash-report.pdf)
+	"""
+	name_run = paragraph.add_run(label)
+	name_run.bold = True
+	paragraph.add_run(f"  [{_file_type_label(path)}]  ({path})")
+
+
 def _render_attachment(paragraph, path, label, is_image, usable_width):
-	"""Render one attachment: image inline, otherwise a text reference."""
+	"""Render one attachment: image inline, otherwise a typed file reference."""
 	if is_image:
 		if not os.path.isfile(path):
 			paragraph.add_run(f"[Missing image attachment: {label}]")
@@ -182,8 +214,8 @@ def _render_attachment(paragraph, path, label, is_image, usable_width):
 			# A single bad image must not break the whole document.
 			paragraph.add_run(f"[Could not embed image: {label}]")
 	else:
-		# Non-image attachments are referenced by name (ISR-319 formalises this).
-		paragraph.add_run(f"Attachment (see media folder): {label}")
+		# Non-image attachments (PDF, DOCX, ...) referenced by name + path (ISR-319).
+		_render_file_reference(paragraph, path, label)
 
 
 def _add_attachments_heading(paragraph):
