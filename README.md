@@ -364,3 +364,6 @@ docker compose --profile dev down -v
 
 - Full test matrix: [TESTING.md](TESTING.md)
 - Telephony setup and rollout notes: [TELEPHONY_SETUP.md](TELEPHONY_SETUP.md)
+- Email ingest setup (Gmail IMAP / Outlook Graph): [docs/EMAIL_INGEST_SETUP.md](docs/EMAIL_INGEST_SETUP.md)
+- Email integration branch summary: [docs/GITHUB_RECENT_CHANGES.md](docs/GITHUB_RECENT_CHANGES.md)
+- Connecting Outlook with Microsoft Graph (Entra app): [GRAPH_EMAIL_READ.md](GRAPH_EMAIL_READ.md)
