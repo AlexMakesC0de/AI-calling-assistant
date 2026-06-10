@@ -10,3 +10,7 @@ venv/
 Dockerfile
 docker-compose*.yml
 .dockerignore
+
+# Dev-only — keep tests in the repo but out of the runtime image
+.pytest_cache/
+tests/
