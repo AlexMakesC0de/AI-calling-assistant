@@ -37,6 +37,37 @@ python scripts/generate_word/generate_word.py --template "templates/Meldingsform
   - Serialize objects/arrays as JSON strings when used in a token.
   - Replace missing values with an empty string.
 
+## Attachments (images)
+
+Case attachments are supplied via an `attachments` array in the data JSON. Each
+entry is either a path string or an object `{ "path", "filename" }`:
+
+```json
+"attachments": [
+  "screenshot.png",
+  { "path": "logs/crash.pdf", "filename": "crash-report.pdf" }
+]
+```
+
+- **Image attachments** (`.png/.jpg/.jpeg/.gif/.bmp/.tif/.tiff`) are embedded
+  **inline**, each in its own paragraph, scaled down to fit the page width
+  (small images are not upscaled; aspect ratio is preserved).
+- **Non-image attachments** are referenced by name (full handling is ISR-319).
+- Placement: if the template contains an `{attachments}` token, the section is
+  inserted there; otherwise an **Attachments** section is appended at the end.
+- Relative attachment paths resolve against `--media-dir` (defaults to the data
+  file's directory).
+- A missing or unreadable image is noted in the document instead of crashing the
+  whole render.
+
+```bash
+python scripts/generate_word/generate_word.py \
+  --template "templates/incident_form_template_with_tokens.docx" \
+  --data scripts/generate_word/incident_example.json \
+  --out filled.docx \
+  --media-dir scripts/generate_word
+```
+
 ## Notes
 
 - The script replaces tokens in paragraphs, table cells, headers and footers. It does not currently replace text inside Word shapes/textboxes; ask if you need that.
