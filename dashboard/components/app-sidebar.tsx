@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Upload,
   AlertTriangle,
+  FileText,
   Inbox,
   MessageCircle,
   Search,
@@ -29,6 +30,7 @@ const navItems = [
   { href: "/", label: "Overview", icon: LayoutDashboard, match: (p: string) => p === "/" },
   { href: "/upload", label: "Upload", icon: Upload, match: (p: string) => p.startsWith("/upload") },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle, match: (p: string) => p.startsWith("/incidents") },
+  { href: "/generate-word", label: "Generate Word", icon: FileText, match: (p: string) => p.startsWith("/generate-word") },
   { href: "/inbox", label: "Inbox", icon: Inbox, match: (p: string) => p.startsWith("/inbox") },
   { href: "/whatsapp", label: "WhatsApp", icon: MessageCircle, match: (p: string) => p.startsWith("/whatsapp") },
   { href: "/search", label: "Search", icon: Search, match: (p: string) => p.startsWith("/search") },
