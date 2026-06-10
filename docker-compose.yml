@@ -30,6 +30,22 @@ services:
       retries: 10
 
   # -----------------------------------------------------------------------
+  # 0b. Ollama model pull – runs once on stack start, then exits
+  # -----------------------------------------------------------------------
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: support-ollama-init
+    networks:
+      - app-network
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c", "ollama pull ${OLLAMA_MODEL:-gemma3:27b}"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  # -----------------------------------------------------------------------
   # 1. Database – PostgreSQL 16 (persists n8n data + issue log)
   # -----------------------------------------------------------------------
   database:
@@ -272,7 +288,7 @@ services:
     ports:
       - "5001:5001"
     environment:
-      TEMPLATE_DIR: /data/shared/templates
+      TEMPLATE_DIR: /data/templates
       OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
       OLLAMA_CONNECT_TIMEOUT: ${OLLAMA_CONNECT_TIMEOUT:-3}
@@ -287,9 +303,14 @@ services:
       EMAIL_URL: ${EMAIL_URL:-http://email-sender:5002/send}
       ENGINEER_ALERT_EMAIL: ${ENGINEER_ALERT_EMAIL:-${SUPPORT_EMAIL:-support-team@example.com}}
       LLM_FAILURE_LOG_PATH: ${LLM_FAILURE_LOG_PATH:-/data/shared/logs/transcript-formatter/llm-failures.log}
+      DB_HOST: ${DB_HOST:-database}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_NAME: ${POSTGRES_DB:-support_db}
+      DB_USER: ${POSTGRES_USER:-support}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-support_secret}
     volumes:
       - ./local-storage/shared:/data/shared
-      - ./templates:/data/shared/templates:ro
+      - ./templates:/data/templates:ro
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5001/health || exit 1"]
       interval: 15s
@@ -297,6 +318,8 @@ services:
       retries: 3
     depends_on:
       ollama:
+        condition: service_healthy
+      database:
         condition: service_healthy
 
   # -----------------------------------------------------------------------

@@ -1,6 +1,8 @@
 import logging
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from datetime import datetime, timezone
 from typing import Any
 
 from flask import Flask, jsonify, render_template, request
@@ -43,6 +45,7 @@ class VoiceRecordingApp:
 
         @self.app.route("/upload", methods=["POST"])
         def upload_audio():
+            pipeline_start = time.monotonic()
             if "file" not in request.files:
                 return jsonify({"error": "No file part in the request."}), 400
 
@@ -88,7 +91,14 @@ class VoiceRecordingApp:
                 caller_metadata["include_dutch_translation"] = include_dutch_raw
             caller_metadata = {k: v for k, v in caller_metadata.items() if v}
 
+            logger.info(
+                "Pipeline started at %s for %s",
+                datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
+                filename,
+            )
+
             logger.info("Step 1: Transcribing %s via Whisper...", filename)
+            step_start = time.monotonic()
             try:
                 transcription = self._clients.transcribe(filepath)
                 transcript_text = transcription.get("text", "")
@@ -97,6 +107,7 @@ class VoiceRecordingApp:
                     "status": "success",
                     "text": transcript_text,
                     "word_count": len(transcript_text.split()),
+                    "processing_time_seconds": transcription.get("processing_time_seconds"),
                 }
                 if alpha_chars < 6:
                     result["pipeline"]["transcription"]["quality_warning"] = (
@@ -104,7 +115,11 @@ class VoiceRecordingApp:
                         "Try a clearer recording or a larger Whisper model."
                     )
                 logger.info(
-                    "Transcription complete: %d words", len(transcript_text.split())
+                    "Step 1 done at %s — transcription: %d words in %.1fs (T+%.1fs)",
+                    datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
+                    len(transcript_text.split()),
+                    time.monotonic() - step_start,
+                    time.monotonic() - pipeline_start,
                 )
             except Exception as exc:
                 logger.error("Transcription failed after retries: %s", exc)
@@ -121,6 +136,7 @@ class VoiceRecordingApp:
                 return jsonify(result), 200
 
             logger.info("Step 2: Sending transcript to AI formatter...")
+            step_start = time.monotonic()
             try:
                 completed_form = self._clients.call_formatter(
                     transcript_text, metadata=caller_metadata
@@ -131,7 +147,13 @@ class VoiceRecordingApp:
                     "confidence": completed_form.get("confidence"),
                     "form": completed_form,
                 }
-                logger.info("Form completed: %s", completed_form.get("form_id"))
+                logger.info(
+                    "Step 2 done at %s — AI form fill: %.1fs (form %s) (T+%.1fs)",
+                    datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
+                    time.monotonic() - step_start,
+                    completed_form.get("form_id"),
+                    time.monotonic() - pipeline_start,
+                )
             except Exception as exc:
                 logger.error("Form generation failed after retries: %s", exc)
                 result["pipeline"]["incident_form"] = {
@@ -223,6 +245,12 @@ class VoiceRecordingApp:
                     "dutch": translated_nl.get("transcript_text", ""),
                 }
 
+            logger.info(
+                "Pipeline complete at %s — total: %.1fs for %s",
+                datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
+                time.monotonic() - pipeline_start,
+                filename,
+            )
             return jsonify(result), 200
 
         @self.app.route("/forms", methods=["GET"])

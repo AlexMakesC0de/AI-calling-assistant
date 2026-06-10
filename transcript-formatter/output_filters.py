@@ -74,6 +74,11 @@ _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 _PII_FREE_TEXT_FIELDS = (
     "issue_description", "resolution_outcome", "call_summary", "error_messages",
 )
+# call_summary is excluded here: operators need the caller name in the summary
+# for context. Phone/email are still redacted via _PII_FREE_TEXT_FIELDS above.
+_PII_NAME_REDACT_TEXT_FIELDS = (
+    "issue_description", "resolution_outcome", "error_messages",
+)
 _PII_FREE_LIST_FIELDS = ("steps_taken", "follow_up_actions")
 
 
@@ -107,6 +112,16 @@ def _redact_phones_and_emails(text: str, replacement: str) -> str:
 _NAME_PARTICLES = {"de", "der", "den", "van", "von", "del", "la", "le",
                    "di", "da", "el", "los", "las"}
 
+_COMMON_WORDS = {
+    # Dutch common words that should never be redacted as names
+    "deze", "heeft", "voor", "meer", "zijn", "werd", "worden", "maar",
+    "kunnen", "moeten", "willen", "zullen", "iemand", "niets", "alles",
+    "echter", "omdat", "wanneer", "waardoor", "daarna", "hierbij",
+    # English equivalents
+    "this", "that", "from", "have", "been", "will", "were", "they",
+    "some", "more", "when", "than", "then", "also",
+}
+
 
 def _redact_name_occurrences(text: str, name: str, replacement: str) -> str:
     """Redact any occurrence of a known caller name in free text.
@@ -123,7 +138,7 @@ def _redact_name_occurrences(text: str, name: str, replacement: str) -> str:
     candidates = [full]
     for token in re.split(r"\s+", full):
         token = token.strip("'-")
-        if len(token) >= 3 and token.lower() not in _NAME_PARTICLES:
+        if len(token) >= 4 and token.lower() not in _NAME_PARTICLES and token.lower() not in _COMMON_WORDS:
             candidates.append(token)
 
     # Apply longest first so the full phrase is replaced before its parts;
@@ -177,9 +192,10 @@ def apply_pii_redaction(ai_fields: dict,
         value = out.get(field)
         if isinstance(value, str) and value:
             scrubbed = _redact_phones_and_emails(value, replacement)
-            scrubbed = _redact_name_occurrences(
-                scrubbed, raw_caller_name, replacement,
-            )
+            if field in _PII_NAME_REDACT_TEXT_FIELDS:
+                scrubbed = _redact_name_occurrences(
+                    scrubbed, raw_caller_name, replacement,
+                )
             out[field] = scrubbed
 
     for field in _PII_FREE_LIST_FIELDS:

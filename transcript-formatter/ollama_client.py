@@ -5,6 +5,7 @@ Ollama LLM integration for the Transcript Formatter service.
 import json
 import logging
 import os
+import re
 import time
 
 import requests
@@ -223,7 +224,7 @@ def _call_llm_and_validate(
             "model": model_name,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.2, "num_predict": 800},
+            "options": {"temperature": 0.0, "num_predict": 1200},
         },
         timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT),
     )
@@ -316,7 +317,49 @@ def _build_retry_prompt(original_prompt: str, schema_errors: dict) -> str:
     return prefix + original_prompt
 
 
-def _ai_fill_form(transcript: str) -> dict:
+_SPEAKER_LABEL_RE = re.compile(r'\bSpeaker\s*\d+\s*:', re.IGNORECASE)
+
+
+def _summary_looks_like_transcript(text: str) -> bool:
+    return bool(_SPEAKER_LABEL_RE.search(text or ""))
+
+
+def _generate_clean_summary(transcript: str, model_name: str) -> str:
+    """Dedicated single-field call when the main extraction produced a raw transcript copy."""
+    prompt = (
+        "You are summarising a support call. Write exactly 2-3 sentences of plain prose.\n"
+        "Cover: (1) who called and what the problem was, "
+        "(2) what was done or attempted, "
+        "(3) how it ended (resolved / unresolved / follow-up scheduled).\n"
+        "Rules — strictly enforced:\n"
+        "- Output ONLY the summary sentences. No JSON, no bullet points, no headings.\n"
+        "- NEVER write 'Speaker 1' or 'Speaker 2'. Use the caller's name if known, "
+        "otherwise 'the caller' and 'the agent'.\n"
+        "- NEVER copy or quote lines from the transcript.\n"
+        "- NEVER mention other customers or separate tickets discussed during the call.\n\n"
+        f"TRANSCRIPT:\n{transcript}"
+    )
+    try:
+        resp = http_client.post(
+            f"{OLLAMA_URL}/api/generate",
+            json={
+                "model": model_name,
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": 0.0, "num_predict": 200},
+            },
+            timeout=(OLLAMA_CONNECT_TIMEOUT, OLLAMA_READ_TIMEOUT),
+        )
+        resp.raise_for_status()
+        summary = _strip_markdown_fences(resp.json().get("response", "")).strip()
+        if summary and not _summary_looks_like_transcript(summary):
+            return summary
+    except Exception as exc:
+        logger.warning("Focused summary call failed: %s", exc)
+    return ""
+
+
+def _ai_fill_form(transcript: str, model_override: str | None = None) -> dict:
     """Send the transcript to Ollama and get back the filled form fields.
 
     On schema validation failure, retry exactly once with a clarifying
@@ -333,7 +376,7 @@ def _ai_fill_form(transcript: str) -> dict:
             logger.info("Trimmed transcript from %d to %d chars for form-fill.",
                         len(transcript), len(trimmed))
         prompt = FORM_FILL_PROMPT_TEMPLATE.replace("{TRANSCRIPT}", trimmed)
-        model_name = _resolve_ollama_model()
+        model_name = model_override.strip() if model_override and model_override.strip() else _resolve_ollama_model()
 
         result, initial_errors = _call_llm_and_validate(
             prompt, model_name, attempt="initial",

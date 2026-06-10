@@ -13,7 +13,8 @@ OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
 # Default fallback used when the OLLAMA_MODEL env var is unset. The active
 # model is resolved per request from the environment by ollama_client; this
 # constant is intentionally only the fallback, not a snapshot of the env.
-OLLAMA_MODEL_DEFAULT = "llama3.1:8b"
+# OLLAMA_MODEL_DEFAULT = "llama3.1:8b"
+OLLAMA_MODEL_DEFAULT = os.getenv("OLLAMA_MODEL")
 OLLAMA_CONNECT_TIMEOUT = float(os.getenv("OLLAMA_CONNECT_TIMEOUT", "3"))
 OLLAMA_READ_TIMEOUT = float(os.getenv("OLLAMA_READ_TIMEOUT", "120"))
 OLLAMA_TRANSLATE_READ_TIMEOUT = float(
@@ -31,7 +32,7 @@ DEFAULT_INCLUDE_DUTCH_TRANSLATION = os.getenv(
 # Content Filtering Configuration
 TERM_FILTER_MODE = os.getenv("TERM_FILTER_MODE", "basic").strip().lower()
 TERM_FILTER_CUSTOM_WORDS = os.getenv("TERM_FILTER_CUSTOM_WORDS", "")
-TERM_FILTER_REPLACEMENT = os.getenv("TERM_FILTER_REPLACEMENT", "[redacted]")
+TERM_FILTER_REPLACEMENT = os.getenv("TERM_FILTER_REPLACEMENT", "*")
 
 # Output Filter Configuration (ISR-355)
 # Each filter is independently toggleable so operators can keep e.g. PII
@@ -79,15 +80,10 @@ OUTPUT_FILTER_OFFTOPIC_MIN_TOKENS = int(
 # Flask Configuration
 TEMPLATE_DIR = os.getenv("TEMPLATE_DIR", "/data/shared/templates")
 
-# Basic profanity filter terms (used in "basic" filter mode)
-BASIC_FILTER_TERMS = {
-    "nigger",
-    "nigga",
-    "faggot",
-    "retard",
-    "whore",
-    "slut",
-}
+# Basic profanity filter terms (used in "basic" filter mode).
+# Loaded from the [profanity] section of names_db.txt — edit that file to
+# add or remove terms; no code change or image rebuild required.
+from word_lists import PROFANITY_TERMS as BASIC_FILTER_TERMS
 
 # Regex patterns for transcript processing
 NON_ACTION_STEP_PATTERNS = [
