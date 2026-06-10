@@ -1,0 +1,9 @@
+{
+  "Body": "Hello from test",
+  "To": "whatsapp:+14155238886",
+  "From": "whatsapp:+31612345678",
+  "SmsStatus": "received",
+  "ProfileName": "Test User",
+  "MessageSid": "SM_test_001",
+  "NumMedia": "0"
+}

@@ -1,0 +1,161 @@
+// This schema mirrors the SQL authored in ../database/initDb/*.sql.
+// Source of truth = SQL files. Regenerate with:  npx prisma db pull && npx prisma generate
+// Do NOT run `prisma migrate` against support_db — it would try to re-own the existing schema.
+
+generator client {
+  provider      = "prisma-client-js"
+  // `native` for local dev (Windows/macOS); `linux-musl-openssl-3.0.x` for the
+  // Alpine-based production image used by the Dockerfile. If you switch the
+  // Dockerfile to a Debian base, swap to `debian-openssl-3.0.x`.
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  accountId     Int             @id @default(autoincrement()) @map("account_id")
+  password      String          @db.VarChar(255)
+  accountEmail  String          @unique(map: "account_account_email_key") @map("account_email") @db.VarChar(255)
+  sessions      RecordSession[]
+
+  @@map("account")
+}
+
+model RecordSession {
+  id          Int           @id @default(autoincrement()) @map("recordingsession_id")
+  startTime   DateTime      @map("starttime") @db.Timestamp(6)
+  endTime     DateTime?     @map("endtime") @db.Timestamp(6)
+  accountId   Int           @map("accountid")
+  account     Account       @relation(fields: [accountId], references: [accountId], onDelete: NoAction, onUpdate: NoAction)
+  files       File[]
+
+  @@map("recordsession")
+}
+
+model FileType {
+  id            Int     @id @default(autoincrement()) @map("filetype_id")
+  fileTypeName  String  @unique(map: "filetype_filetypename_key") @map("filetypename") @db.VarChar(50)
+  files         File[]
+
+  @@map("filetype")
+}
+
+model File {
+  id                    Int              @id @default(autoincrement()) @map("file_id")
+  fileTypeId            Int              @map("filetypeid")
+  fileUrl               String           @map("fileurl")
+  recordingSessionId    Int              @map("recordingsession_id")
+  fileType              FileType         @relation(fields: [fileTypeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  recordSession         RecordSession    @relation(fields: [recordingSessionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  transcriptChunks      TranscriptChunk[]
+  incidentForms         IncidentForm[]
+
+  @@map("file")
+}
+
+model TranscriptChunk {
+  id          Int    @id @default(autoincrement())
+  fileId      Int    @map("file_id")
+  chunkIndex  Int    @map("chunk_index")
+  content     String
+  // embedding  Unsupported("vector(1536)")?
+  file        File   @relation(fields: [fileId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@map("transcriptchunk")
+}
+
+model IncidentForm {
+  id                  Int                       @id @default(autoincrement())
+  fileId              Int                       @map("file_id")
+  status              String                    @default("completed")
+  category            String?
+  priority            String?
+  completedAt         DateTime                  @default(now()) @map("completed_at") @db.Timestamptz(6)
+  file                File                      @relation(fields: [fileId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  generalInformation  IncidentGeneralInformation?
+  transcriptions      IncidentTranscription[]
+  whatsappMessages    WhatsAppMessage[]
+
+  @@index([fileId], map: "idx_incident_form_file_id")
+  @@map("incident_form")
+}
+
+model IncidentGeneralInformation {
+  incidentFormId  Int          @id @map("incident_form_id")
+  callerName      String?      @map("caller_name") @db.VarChar(255)
+  agentName       String?      @map("agent_name") @db.VarChar(255)
+  audioFilename   String?      @map("audio_filename")
+  formData        Json         @default("{}") @map("form_data")
+  incidentForm    IncidentForm @relation(fields: [incidentFormId], references: [id], onDelete: Cascade)
+
+  @@map("incident_general_information")
+}
+
+model IncidentTranscription {
+  id              Int          @id @default(autoincrement())
+  incidentFormId  Int          @map("incident_form_id")
+  langCode        String       @map("lang_code") @db.VarChar(10)
+  transcriptText  String?      @map("transcript_text")
+  summary         String?
+  sentiment       String?
+  createdAt       DateTime?    @default(now()) @map("created_at") @db.Timestamptz(6)
+  incidentForm    IncidentForm @relation(fields: [incidentFormId], references: [id], onDelete: Cascade)
+
+  @@unique([incidentFormId, langCode], map: "unique_lang_per_form")
+  @@index([incidentFormId], map: "idx_transcription_form_id")
+  @@index([langCode], map: "idx_transcription_lang")
+  @@map("incident_transcription")
+}
+
+// twilio_call table is intentionally NOT modeled — the table still exists in
+// the DB for rollback safety, but the dashboard no longer reads or writes it.
+
+model WhatsAppConversation {
+  id             Int                @id @default(autoincrement())
+  contactPhone   String             @unique @map("contact_phone") @db.VarChar(30)
+  contactName    String?            @map("contact_name") @db.VarChar(255)
+  lastMessageAt  DateTime           @default(now()) @map("last_message_at") @db.Timestamptz(6)
+  createdAt      DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  messages       WhatsAppMessage[]
+
+  @@map("whatsapp_conversation")
+}
+
+model WhatsAppMessage {
+  id              Int                    @id @default(autoincrement())
+  conversationId  Int                    @map("conversation_id")
+  twilioSid       String?                @unique @map("twilio_sid") @db.VarChar(64)
+  direction       String                 // "inbound" | "outbound"
+  status          String                 @default("received")
+  messageType     String                 @default("text") @map("message_type")
+  body            String?
+  incidentFormId  Int?                   @map("incident_form_id")
+  rawPayload      Json                   @default("{}") @map("raw_payload")
+  createdAt       DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime               @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  conversation    WhatsAppConversation   @relation(fields: [conversationId], references: [id], onDelete: NoAction)
+  incidentForm    IncidentForm?          @relation(fields: [incidentFormId], references: [id], onDelete: SetNull)
+  media           WhatsAppMedia[]
+
+  @@index([conversationId], map: "idx_wa_msg_conversation")
+  @@index([incidentFormId], map: "idx_wa_msg_incident")
+  @@map("whatsapp_message")
+}
+
+model WhatsAppMedia {
+  id            Int             @id @default(autoincrement())
+  messageId     Int             @map("message_id")
+  mediaIndex    Int             @default(0) @map("media_index") @db.SmallInt
+  twilioUrl     String          @map("twilio_url")
+  contentType   String          @default("application/octet-stream") @map("content_type") @db.VarChar(100)
+  localPath     String?         @map("local_path")
+  fileSizeBytes BigInt?         @map("file_size_bytes")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  message       WhatsAppMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, mediaIndex], map: "uq_wa_media_msg_index")
+  @@map("whatsapp_media")
+}

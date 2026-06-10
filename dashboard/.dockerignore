@@ -1,0 +1,27 @@
+# Build artefacts — regenerated inside the image
+node_modules
+.next
+out
+
+# Local env + secrets — must never enter the image
+.env
+.env.local
+.env.*.local
+
+# Local-only state
+recordings
+*.tsbuildinfo
+bun.lockb
+
+# Version control / editor noise
+.git
+.gitignore
+.idea
+.vscode
+.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docs
+README.md
