@@ -52,7 +52,9 @@ entry is either a path string or an object `{ "path", "filename" }`:
 - **Image attachments** (`.png/.jpg/.jpeg/.gif/.bmp/.tif/.tiff`) are embedded
   **inline**, each in its own paragraph, scaled down to fit the page width
   (small images are not upscaled; aspect ratio is preserved).
-- **Non-image attachments** are referenced by name (full handling is ISR-319).
+- **Non-image attachments** (PDF, DOCX, etc.) are listed as
+  `Filename  [TYPE]  (path)` — the filename in bold, a clear type label, and the
+  locally accessible path.
 - Placement: if the template contains an `{attachments}` token, the section is
   inserted there; otherwise an **Attachments** section is appended at the end.
 - Relative attachment paths resolve against `--media-dir` (defaults to the data
