@@ -126,6 +126,7 @@ function MediaRow({
 }) {
   const isImage = media.contentType.startsWith("image/");
   const isAudio = media.contentType.startsWith("audio/");
+  const isVideo = media.contentType.startsWith("video/");
   const proxyUrl = `/api/whatsapp/media/${media.id}`;
 
   if (isImage) {
@@ -147,6 +148,14 @@ function MediaRow({
       <audio controls preload="none" className="max-w-full">
         <source src={proxyUrl} type={media.contentType} />
       </audio>
+    );
+  }
+
+  if (isVideo) {
+    return (
+      <video controls preload="none" className="max-h-64 max-w-full rounded-lg">
+        <source src={proxyUrl} type={media.contentType} />
+      </video>
     );
   }
 

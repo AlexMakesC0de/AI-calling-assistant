@@ -30,6 +30,7 @@ export type OutlookAttachmentMeta = {
   contentType: string;
   size: number;
   isInline: boolean;
+  contentId?: string;
 };
 
 export class OutlookNotConfiguredError extends Error {
@@ -45,6 +46,10 @@ export function outlookConfigured(): boolean {
 
 // Token caching — Microsoft tokens last ~3600s. We refresh ~60s before expiry.
 let cached: { token: string; expiresAt: number } | null = null;
+
+export async function getAppToken(): Promise<string> {
+  return getOutlookToken();
+}
 
 async function getOutlookToken(): Promise<string> {
   if (!env.outlook.configured) throw new OutlookNotConfiguredError();
@@ -163,7 +168,7 @@ export async function getOutlookMessage(id: string): Promise<OutlookMessage> {
 
 export async function listOutlookAttachments(messageId: string): Promise<OutlookAttachmentMeta[]> {
   const json = await graphJson<{ value: Array<OutlookAttachmentMeta & { "@odata.type"?: string }> }>(
-    `${userScope()}/messages/${encodeURIComponent(messageId)}/attachments?$select=id,name,contentType,size,isInline`
+    `${userScope()}/messages/${encodeURIComponent(messageId)}/attachments?$select=id,name,contentType,size,isInline,contentId`
   );
   return json.value;
 }
