@@ -20,7 +20,7 @@ export function InboxTabs({
       <Tab
         href="/inbox/outlook"
         active={active === "outlook"}
-        label="Outlook"
+        label="Email"
         badge={outlookUnread}
         muted={!outlookConfigured}
       />
