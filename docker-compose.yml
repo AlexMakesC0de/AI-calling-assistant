@@ -352,7 +352,12 @@ services:
       OUTLOOK_CLIENT_SECRET: ${OUTLOOK_CLIENT_SECRET:-}
       OUTLOOK_MAILBOX: ${OUTLOOK_MAILBOX:-}
       OUTLOOK_FOLDER: ${OUTLOOK_FOLDER:-Inbox}
+      EMAIL_ATTACHMENTS_DIR: /data/shared/email-attachments
+      WHATSAPP_MEDIA_DIR: /data/shared/whatsapp-media
+      OUTLOOK_ATTACHMENTS_DIR: /data/shared/outlook-attachments
       NODE_ENV: production
+    volumes:
+      - ./local-storage/shared:/data/shared
     ports:
       - "3000:3000"
     depends_on:
