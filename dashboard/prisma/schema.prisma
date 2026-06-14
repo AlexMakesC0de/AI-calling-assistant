@@ -212,3 +212,19 @@ model EmailAttachment {
   @@unique([messageId, attachmentIndex], map: "uq_email_att_msg_index")
   @@map("email_attachment")
 }
+
+model OutlookAttachmentCache {
+  id            Int      @id @default(autoincrement())
+  messageId     String   @map("message_id") @db.VarChar(500)
+  attachmentId  String   @map("attachment_id") @db.VarChar(500)
+  fileName      String?  @map("file_name") @db.VarChar(500)
+  contentType   String   @default("application/octet-stream") @map("content_type") @db.VarChar(100)
+  localPath     String   @map("local_path")
+  fileSizeBytes BigInt?  @map("file_size_bytes")
+  contentId     String?  @map("content_id") @db.VarChar(255)
+  isInline      Boolean  @default(false) @map("is_inline")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([messageId, attachmentId], map: "uq_outlook_att_cache")
+  @@map("outlook_attachment_cache")
+}
