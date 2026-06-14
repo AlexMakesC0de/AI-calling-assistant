@@ -11,7 +11,12 @@ const outlookClientSecret = process.env.OUTLOOK_CLIENT_SECRET ?? "";
 const outlookMailbox = process.env.OUTLOOK_MAILBOX ?? "";
 const outlookFolder = process.env.OUTLOOK_FOLDER ?? "Inbox";
 
+const googleClientId = process.env.GOOGLE_CLIENT_ID ?? "";
+const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
+
 const emailAttachmentsDir = (process.env.EMAIL_ATTACHMENTS_DIR ?? "/data/shared/email-attachments").replace(/\/$/, "");
+const whatsappMediaDir = (process.env.WHATSAPP_MEDIA_DIR ?? "/data/shared/whatsapp-media").replace(/\/$/, "");
+const outlookAttachmentsDir = (process.env.OUTLOOK_ATTACHMENTS_DIR ?? "/data/shared/outlook-attachments").replace(/\/$/, "");
 
 const formatterBaseUrl = (process.env.FORMATTER_URL ?? "http://localhost:5001").replace(/\/$/, "");
 
@@ -19,6 +24,8 @@ export const env = {
   voiceAppUploadUrl: process.env.VOICE_APP_UPLOAD_URL ?? "http://localhost:5000/upload",
   formatterBaseUrl,
   emailAttachmentsDir,
+  whatsappMediaDir,
+  outlookAttachmentsDir,
   mailpitBaseUrl,
   ollamaBaseUrl,
   ollamaEmbedModel: process.env.OLLAMA_EMBED_MODEL ?? "nomic-embed-text",
@@ -33,6 +40,11 @@ export const env = {
     mailbox: outlookMailbox,
     folder: outlookFolder,
     configured: Boolean(outlookTenantId && outlookClientId && outlookClientSecret && outlookMailbox),
+  },
+  google: {
+    clientId: googleClientId,
+    clientSecret: googleClientSecret,
+    configured: Boolean(googleClientId && googleClientSecret),
   },
   // Service health endpoints. Defaults match host-mode dev (services exposed
   // on localhost via docker-compose port mappings). Override per-service when
