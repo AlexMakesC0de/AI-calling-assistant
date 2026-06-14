@@ -73,6 +73,7 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 # from this path, inheriting its uid/gid — without this the volume mount
 # point is root-owned and the unprivileged process can't write.
 RUN mkdir -p /recordings && chown nextjs:nodejs /recordings
+RUN mkdir -p /data/shared && chown nextjs:nodejs /data/shared
 
 USER nextjs
 EXPOSE 3000
