@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mkdir, writeFile } from "fs/promises";
+import { join } from "path";
 import { prisma } from "@/lib/prisma";
+import { env } from "@/lib/env";
+import { guessExtension } from "@/lib/media-storage";
 
 function inferMessageType(numMedia: number, form: Record<string, string>): string {
   if (numMedia === 0) return "text";
@@ -47,7 +51,7 @@ export async function POST(req: NextRequest) {
     const mediaUrl = form[`MediaUrl${i}`];
     const contentType = form[`MediaContentType${i}`] ?? "application/octet-stream";
     if (!mediaUrl) continue;
-    await prisma.whatsAppMedia.create({
+    const mediaRecord = await prisma.whatsAppMedia.create({
       data: {
         messageId: message.id,
         mediaIndex: i,
@@ -55,6 +59,39 @@ export async function POST(req: NextRequest) {
         contentType,
       },
     });
+
+    try {
+      const sid = process.env.TWILIO_ACCOUNT_SID;
+      const token = process.env.TWILIO_AUTH_TOKEN;
+      if (sid && token) {
+        const auth = "Basic " + Buffer.from(`${sid}:${token}`).toString("base64");
+        const initial = await fetch(mediaUrl, {
+          headers: { Authorization: auth },
+          redirect: "manual",
+        });
+        let res: Response;
+        const location = initial.headers.get("location");
+        if (initial.status >= 300 && initial.status < 400 && location) {
+          res = await fetch(location);
+        } else {
+          res = initial;
+        }
+        if (res.ok) {
+          const ext = guessExtension(contentType);
+          const filename = `${messageSid || message.id}_${i}${ext}`;
+          await mkdir(env.whatsappMediaDir, { recursive: true });
+          const localPath = join(env.whatsappMediaDir, filename);
+          const buffer = Buffer.from(await res.arrayBuffer());
+          await writeFile(localPath, buffer);
+          await prisma.whatsAppMedia.update({
+            where: { id: mediaRecord.id },
+            data: { localPath, fileSizeBytes: buffer.length },
+          });
+        }
+      }
+    } catch (err) {
+      console.error("Failed to download WhatsApp media locally:", err);
+    }
   }
 
   const ack = messageType === "voice_note"
