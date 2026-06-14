@@ -1,7 +1,13 @@
-$env:TWILIO_ACCOUNT_SID = "$env:TWILIO_ACCOUNT_SID"
-$env:TWILIO_AUTH_TOKEN = "$env:TWILIO_AUTH_TOKEN"
-$env:TWILIO_WHATSAPP_FROM = "whatsapp:+14155238886"
-$env:DATABASE_URL = "$env:DATABASE_URL"
+# Load secrets from the dashboard .env file — never hardcode credentials here.
+$envFile = Join-Path $PSScriptRoot "..\dashboard\.env"
+if (Test-Path $envFile) {
+    Get-Content $envFile | ForEach-Object {
+        if ($_ -match '^\s*([A-Z_]+)\s*=\s*"?(.+?)"?\s*$' -and $_ -notmatch '^\s*#') {
+            [System.Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], "Process")
+        }
+    }
+}
+
 $env:TWILIO_VALIDATE_SIGNATURE = "false"
 $env:WHATSAPP_PUBLIC_BASE_URL = ""
 $env:WHATSAPP_SILENT_REPLY = "false"
