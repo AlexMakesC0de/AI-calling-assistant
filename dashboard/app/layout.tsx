@@ -3,8 +3,8 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import "./globals.css";
 import { AppSidebar } from "@/components/app-sidebar";
+import { HeaderProfile } from "@/components/header-profile";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { Separator } from "@/components/ui/separator";
 import { getSession } from "@/lib/auth";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
@@ -37,12 +37,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <SidebarProvider defaultOpen={defaultOpen}>
           <AppSidebar session={session} />
           <SidebarInset>
-            <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
-              <SidebarTrigger className="-ml-1" />
-              <Separator orientation="vertical" className="mr-2 h-4" />
+            <header className="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b border-border bg-background px-4">
+              <SidebarTrigger className="-ml-1 md:hidden" />
               <span className="text-sm font-medium text-muted-foreground">
                 Support Pipeline
               </span>
+              <div className="ml-auto">
+                <HeaderProfile
+                  name={session.name}
+                  email={session.email}
+                  role={session.role}
+                />
+              </div>
             </header>
             <main className="flex-1 p-6">{children}</main>
           </SidebarInset>

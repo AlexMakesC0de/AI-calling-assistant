@@ -9,6 +9,8 @@ import {
   type MailpitListResponse,
 } from "@/lib/mailpit";
 import { outlookConfigured } from "@/lib/outlook";
+import { getStoredToken } from "@/lib/outlook-oauth";
+import { getSession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Inbox" };
@@ -18,7 +20,9 @@ type SearchParams = Promise<{ q?: string }>;
 export default async function InboxPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
   const query = sp.q?.trim() ?? "";
-  const hasOutlook = outlookConfigured();
+  const session = await getSession();
+  const userToken = session ? await getStoredToken(session.accountId) : null;
+  const hasOutlook = outlookConfigured() || Boolean(userToken);
 
   let response: MailpitListResponse | null = null;
   let tags: string[] = [];
