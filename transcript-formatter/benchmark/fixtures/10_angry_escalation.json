@@ -1,0 +1,38 @@
+{
+  "id": "10_angry_escalation",
+  "title": "Repeat system outage, furious customer, critical escalation",
+  "language": "en",
+  "category_focus": "Technical",
+  "notes": "High-emotion repeat caller. Exercises the extreme sentiment value, a critical priority, error-code extraction, and an escalated status. All data is synthetic.",
+  "transcript": [
+    "Speaker 1: SSM Repak technical support, this is Daan. How can I help?",
+    "Speaker 2: Finally. This is Robert King, account AC-10092, and this is the third time I've called this week. Your system keeps going down and it's costing me real money.",
+    "Speaker 1: I'm very sorry, Robert. I can hear how frustrating this is. Can you tell me exactly what's happening now?",
+    "Speaker 2: The whole production line management system is offline. It throws \"SYS-900 service unavailable\" and then nothing. My factory is at a standstill.",
+    "Speaker 1: Understood. A full system outage stopping production is critical, and I'm treating it as critical priority right now.",
+    "Speaker 2: I don't want priorities, I want it fixed. I've been told that twice already and nothing changed.",
+    "Speaker 1: I hear you. I'm not going to give you another holding answer. The SYS-900 error is a backend service failure, that's beyond what I can restart from here. I'm escalating this directly to our engineering team as a critical incident, and I'm staying on the case as your point of contact.",
+    "Speaker 2: And what does that actually mean for me?",
+    "Speaker 1: It means an engineer is assigned immediately, not queued. I'll personally call you with an update within the hour. What number should I use?",
+    "Speaker 2: 06 99887766. Within the hour, I'm holding you to that.",
+    "Speaker 1: Understood. I've logged a critical incident for the SYS-900 outage and escalated it to engineering. I'll call you on that number within the hour."
+  ],
+  "expected": {
+    "caller_name": "Robert King",
+    "account_or_reference": "AC-10092",
+    "contact_info": "06 99887766",
+    "agent_name": "Daan",
+    "issue_category": "Technical",
+    "issue_priority": "Critical",
+    "resolution_status": "Escalated",
+    "follow_up_required": true,
+    "follow_up_department": "Engineering",
+    "customer_sentiment": "Very Dissatisfied",
+    "issue_description_keywords": ["system", "down", "offline"],
+    "error_messages_keywords": ["SYS-900"],
+    "steps_taken_keywords": ["escalat", "incident"],
+    "resolution_outcome_keywords": ["escalat", "engineer"],
+    "follow_up_actions_keywords": ["call", "engineer"],
+    "call_summary_keywords": ["system", "escalat", "critical"]
+  }
+}

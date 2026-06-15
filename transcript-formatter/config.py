@@ -2,11 +2,18 @@
 Configuration and environment variables for the Transcript Formatter service.
 """
 
+import logging
 import os
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Ollama Configuration
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+# Default fallback used when the OLLAMA_MODEL env var is unset. The active
+# model is resolved per request from the environment by ollama_client; this
+# constant is intentionally only the fallback, not a snapshot of the env.
+OLLAMA_MODEL_DEFAULT = "llama3.1:8b"
 OLLAMA_CONNECT_TIMEOUT = float(os.getenv("OLLAMA_CONNECT_TIMEOUT", "3"))
 OLLAMA_READ_TIMEOUT = float(os.getenv("OLLAMA_READ_TIMEOUT", "120"))
 OLLAMA_TRANSLATE_READ_TIMEOUT = float(
@@ -25,6 +32,49 @@ DEFAULT_INCLUDE_DUTCH_TRANSLATION = os.getenv(
 TERM_FILTER_MODE = os.getenv("TERM_FILTER_MODE", "basic").strip().lower()
 TERM_FILTER_CUSTOM_WORDS = os.getenv("TERM_FILTER_CUSTOM_WORDS", "")
 TERM_FILTER_REPLACEMENT = os.getenv("TERM_FILTER_REPLACEMENT", "[redacted]")
+
+# Output Filter Configuration (ISR-355)
+# Each filter is independently toggleable so operators can keep e.g. PII
+# redaction on while turning off-topic detection off if it proves noisy.
+
+# PII redaction: strip caller PII from the form before persistence.
+OUTPUT_FILTER_REDACT_PII = os.getenv(
+    "OUTPUT_FILTER_REDACT_PII", "true",
+).strip().lower() in ("1", "true", "yes", "on")
+OUTPUT_FILTER_PII_FIELDS = [
+    field.strip()
+    for field in os.getenv(
+        "OUTPUT_FILTER_PII_FIELDS", "caller_name,contact_info",
+    ).split(",")
+    if field.strip()
+]
+OUTPUT_FILTER_PII_REPLACEMENT = os.getenv(
+    "OUTPUT_FILTER_PII_REPLACEMENT", "[redacted]",
+)
+
+# Low-confidence review flag: mark the form for engineer review when the
+# LLM's self-rated confidence is too weak to trust automatically.
+OUTPUT_FILTER_LOW_CONF_REVIEW = os.getenv(
+    "OUTPUT_FILTER_LOW_CONF_REVIEW", "true",
+).strip().lower() in ("1", "true", "yes", "on")
+OUTPUT_FILTER_LOW_CONF_OVERALL = os.getenv(
+    "OUTPUT_FILTER_LOW_CONF_OVERALL", "low",
+).strip().lower()
+OUTPUT_FILTER_LOW_CONF_MIN_FIELDS = int(
+    os.getenv("OUTPUT_FILTER_LOW_CONF_MIN_FIELDS", "5"),
+)
+
+# Off-topic detection: reject and retry when the LLM response does not appear
+# to relate to the input transcript (content-token overlap below threshold).
+OUTPUT_FILTER_OFFTOPIC_DETECT = os.getenv(
+    "OUTPUT_FILTER_OFFTOPIC_DETECT", "true",
+).strip().lower() in ("1", "true", "yes", "on")
+OUTPUT_FILTER_OFFTOPIC_THRESHOLD = float(
+    os.getenv("OUTPUT_FILTER_OFFTOPIC_THRESHOLD", "0.10"),
+)
+OUTPUT_FILTER_OFFTOPIC_MIN_TOKENS = int(
+    os.getenv("OUTPUT_FILTER_OFFTOPIC_MIN_TOKENS", "12"),
+)
 
 # Flask Configuration
 TEMPLATE_DIR = os.getenv("TEMPLATE_DIR", "/data/shared/templates")
@@ -69,69 +119,26 @@ SCORED_FIELDS = [
 ]
 
 # AI Prompt Template
-FORM_FILL_PROMPT_TEMPLATE = """\
-You are an experienced customer-support analyst. You have just received a \
-transcript of a support call. The transcript uses speaker diarization — each \
-line is prefixed with a speaker label such as "Speaker 1:" or "Speaker 2:". \
-In most calls, the person who speaks first is the support agent (they greet \
-the caller), and the other speaker is the customer/caller. Use these labels \
-to accurately identify who said what.
+# The extraction prompt is stored in prompts/extraction.txt so it can be
+# edited and reloaded with a service restart, without rebuilding the image.
+# The placeholder {TRANSCRIPT} is substituted at request time via str.replace.
+PROMPT_TEMPLATE_PATH = Path(
+    os.getenv(
+        "FORM_FILL_PROMPT_PATH",
+        str(Path(__file__).resolve().parent / "prompts" / "extraction.txt"),
+    )
+)
 
-The transcript may be in English, Dutch, or another language. If needed, \
-translate internally while extracting data, but keep the final JSON values in \
-clear English (except proper names, product names, and exact error text).
 
-Your job is to read through the conversation \
-and fill out the incident form below by extracting the relevant information \
-from the transcript.
+def _load_form_fill_prompt() -> str:
+    try:
+        return PROMPT_TEMPLATE_PATH.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.error(
+            "Prompt template missing at %s; LLM extraction will fail until restored.",
+            PROMPT_TEMPLATE_PATH,
+        )
+        return ""
 
-Fill out EVERY field as accurately as possible based on what was said in the \
-call. If information for a field was not mentioned, write "Not mentioned" for \
-string fields or use your best judgement for enum fields.
 
-For each field, also rate your CONFIDENCE as "high", "medium", or "low":
-- "high" = the information was explicitly stated in the transcript
-- "medium" = you inferred it from context
-- "low" = it was not mentioned and you are guessing
-
-Return ONLY a valid JSON object with EXACTLY these keys (no markdown fences, \
-no extra text, no explanation):
-
-{{
-  "caller_name": "<caller's name or 'Not mentioned'>",
-  "caller_name_confidence": "<high|medium|low>",
-  "account_or_reference": "<any account/customer ID/reference number or 'Not mentioned'>",
-  "account_or_reference_confidence": "<high|medium|low>",
-  "contact_info": "<phone or email if mentioned, or 'Not mentioned'>",
-  "contact_info_confidence": "<high|medium|low>",
-  "agent_name": "<support agent's name or 'Not mentioned'>",
-  "agent_name_confidence": "<high|medium|low>",
-  "issue_category": "<one of: Technical, Billing, Account, Shipping, Network, Software, Hardware, General>",
-  "issue_category_confidence": "<high|medium|low>",
-  "issue_priority": "<one of: Low, Medium, High, Critical>",
-  "issue_priority_confidence": "<high|medium|low>",
-  "issue_description": "<clear description of the caller's problem>",
-  "issue_description_confidence": "<high|medium|low>",
-  "error_messages": "<any specific error messages/codes mentioned or 'None'>",
-  "error_messages_confidence": "<high|medium|low>",
-  "resolution_status": "<one of: Resolved, Partially Resolved, Unresolved, Escalated>",
-  "resolution_status_confidence": "<high|medium|low>",
-  "steps_taken": ["<step 1>", "<step 2>"],
-  "steps_taken_confidence": "<high|medium|low>",
-  "resolution_outcome": "<what was the final result of the call>",
-  "resolution_outcome_confidence": "<high|medium|low>",
-  "follow_up_required": true or false,
-  "follow_up_required_confidence": "<high|medium|low>",
-  "follow_up_actions": ["<action 1>"] or [],
-  "follow_up_actions_confidence": "<high|medium|low>",
-  "follow_up_department": "<department to escalate to, or 'None'>",
-  "follow_up_department_confidence": "<high|medium|low>",
-  "customer_sentiment": "<one of: Very Satisfied, Satisfied, Neutral, Dissatisfied, Very Dissatisfied>",
-  "customer_sentiment_confidence": "<high|medium|low>",
-  "call_summary": "<2-3 sentence summary of the entire call>",
-  "call_summary_confidence": "<high|medium|low>"
-}}
-
-TRANSCRIPT:
-{transcript}
-"""
+FORM_FILL_PROMPT_TEMPLATE = _load_form_fill_prompt()

@@ -3,3 +3,7 @@ __pycache__/
 .venv/
 .git/
 *.md
+
+# Dev-only — keep tests in the repo but out of the runtime image
+.pytest_cache/
+tests/

@@ -99,6 +99,23 @@
         "full_text": { "type": "string" },
         "word_count": { "type": "integer" }
       }
+    },
+    "attachments": {
+      "type": "array",
+      "description": "Files attached to the case (e.g. email image attachments). Image types are embedded inline in the generated document; other types are referenced by name.",
+      "items": {
+        "oneOf": [
+          { "type": "string", "description": "Path to the attachment file." },
+          {
+            "type": "object",
+            "properties": {
+              "path": { "type": "string", "description": "Path to the attachment file (relative paths resolve against the media directory)." },
+              "filename": { "type": "string", "description": "Display name for the attachment." },
+              "content_type": { "type": "string", "description": "MIME type, if known." }
+            }
+          }
+        ]
+      }
     }
   }
 }

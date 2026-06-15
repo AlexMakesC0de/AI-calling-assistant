@@ -38,5 +38,9 @@
   "transcript": {
     "full_text": "Agent: Hello. Caller: My app crashes on startup after the update. Agent: Let's try reinstalling...",
     "word_count": 42
-  }
+  },
+  "attachments": [
+    "screenshot.png",
+    { "path": "logs/crash.pdf", "filename": "crash-report.pdf", "content_type": "application/pdf" }
+  ]
 }

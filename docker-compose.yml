@@ -291,6 +291,9 @@ services:
       TERM_FILTER_MODE: ${TERM_FILTER_MODE:-basic}
       TERM_FILTER_CUSTOM_WORDS: ${TERM_FILTER_CUSTOM_WORDS:-}
       TERM_FILTER_REPLACEMENT: ${TERM_FILTER_REPLACEMENT:-[redacted]}
+      EMAIL_URL: ${EMAIL_URL:-http://email-sender:5002/send}
+      ENGINEER_ALERT_EMAIL: ${ENGINEER_ALERT_EMAIL:-${SUPPORT_EMAIL:-support-team@example.com}}
+      LLM_FAILURE_LOG_PATH: ${LLM_FAILURE_LOG_PATH:-/data/shared/logs/transcript-formatter/llm-failures.log}
     volumes:
       - ./local-storage/shared:/data/shared
       - ./templates:/data/shared/templates:ro
@@ -412,7 +415,7 @@ services:
         condition: service_healthy
 
   # -----------------------------------------------------------------------
-  # 9. Mailpit – local SMTP catch-all with web UI (dev/test only)
+  # 10. Mailpit – local SMTP catch-all with web UI (dev/test only)
   # -----------------------------------------------------------------------
   mailpit:
     <<: *common
