@@ -21,6 +21,7 @@ services:
       OLLAMA_FLASH_ATTENTION: ${OLLAMA_FLASH_ATTENTION:-1}
       OLLAMA_KV_CACHE_TYPE: ${OLLAMA_KV_CACHE_TYPE:-q8_0}
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:--1}
+      OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
     volumes:
       - ./local-storage/ollama:/root/.ollama
     healthcheck:
@@ -39,7 +40,7 @@ services:
       - app-network
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["/bin/sh", "-c", "ollama pull ${OLLAMA_MODEL:-gemma3:27b}"]
+    entrypoint: ["/bin/sh", "-c", "ollama pull ${OLLAMA_MODEL:-gemma3:12b}"]
     depends_on:
       ollama:
         condition: service_healthy
@@ -258,14 +259,22 @@ services:
       dockerfile: Dockerfile
     container_name: support-transcriber
     environment:
-      WHISPER_MODEL_SIZE: ${WHISPER_MODEL:-small}
+      WHISPER_MODEL_SIZE: ${WHISPER_MODEL:-large-v2}
       WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
       WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
       NUM_SPEAKERS: ${NUM_SPEAKERS:-2}
+      # Resilient model-download retry budget (see .env.example for guidance).
+      MODEL_DOWNLOAD_MAX_ATTEMPTS: ${MODEL_DOWNLOAD_MAX_ATTEMPTS:-8}
+      MODEL_DOWNLOAD_BASE_DELAY: ${MODEL_DOWNLOAD_BASE_DELAY:-2.0}
+      MODEL_DOWNLOAD_MAX_DELAY: ${MODEL_DOWNLOAD_MAX_DELAY:-60.0}
+      # Per-request HTTP timeout for HF Hub downloads; raise on slow links.
+      HF_HUB_DOWNLOAD_TIMEOUT: ${HF_HUB_DOWNLOAD_TIMEOUT:-60}
     ports:
       - "9000:9000"
     volumes:
       - ./local-storage/shared:/data/shared
+      # Persistent model cache: a model downloaded once survives restarts and
+      # rebuilds, so the slow first-time fetch happens at most once per host.
       - ./local-storage/whisper-models:/models
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9000/health || exit 1"]
@@ -290,16 +299,21 @@ services:
     environment:
       TEMPLATE_DIR: /data/templates
       OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma3:12b}
       OLLAMA_CONNECT_TIMEOUT: ${OLLAMA_CONNECT_TIMEOUT:-3}
-      OLLAMA_READ_TIMEOUT: ${OLLAMA_READ_TIMEOUT:-180}
-      OLLAMA_TRANSLATE_READ_TIMEOUT: ${OLLAMA_TRANSLATE_READ_TIMEOUT:-180}
+      OLLAMA_READ_TIMEOUT: ${OLLAMA_READ_TIMEOUT:-600}
+      OLLAMA_TRANSLATE_READ_TIMEOUT: ${OLLAMA_TRANSLATE_READ_TIMEOUT:-120}
       OLLAMA_PULL_TIMEOUT: ${OLLAMA_PULL_TIMEOUT:-900}
       TRANSLATION_CHUNK_MAX_CHARS: ${TRANSLATION_CHUNK_MAX_CHARS:-2500}
       DEFAULT_INCLUDE_DUTCH_TRANSLATION: ${DEFAULT_INCLUDE_DUTCH_TRANSLATION:-true}
       TERM_FILTER_MODE: ${TERM_FILTER_MODE:-basic}
       TERM_FILTER_CUSTOM_WORDS: ${TERM_FILTER_CUSTOM_WORDS:-}
-      TERM_FILTER_REPLACEMENT: ${TERM_FILTER_REPLACEMENT:-[redacted]}
+      TERM_FILTER_REPLACEMENT: ${TERM_FILTER_REPLACEMENT:-*}
+      OUTPUT_FILTER_PII_FIELDS: ${OUTPUT_FILTER_PII_FIELDS:-contact_info}
+      WORD_LIST_RETRY_ATTEMPTS: ${WORD_LIST_RETRY_ATTEMPTS:-9}
+      WORD_LIST_RETRY_BASE_DELAY: ${WORD_LIST_RETRY_BASE_DELAY:-1.0}
+      WORD_LIST_RETRY_MAX_DELAY: ${WORD_LIST_RETRY_MAX_DELAY:-30.0}
+      WORD_LIST_LOAD_TIMEOUT: ${WORD_LIST_LOAD_TIMEOUT:-150.0}
       EMAIL_URL: ${EMAIL_URL:-http://email-sender:5002/send}
       ENGINEER_ALERT_EMAIL: ${ENGINEER_ALERT_EMAIL:-${SUPPORT_EMAIL:-support-team@example.com}}
       LLM_FAILURE_LOG_PATH: ${LLM_FAILURE_LOG_PATH:-/data/shared/logs/transcript-formatter/llm-failures.log}

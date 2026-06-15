@@ -4,7 +4,7 @@ Transcript analysis and processing for the Transcript Formatter service.
 
 import re
 from config import NON_ACTION_STEP_PATTERNS, ACTION_HINT_PATTERNS
-from word_lists import normalize_name, name_in_db, TUSSENVOEGELS
+from word_lists import normalize_name, name_in_db
 
 # The LLM occasionally writes the company name "Repak" as "Repack" etc. Match
 # whole words only so unrelated words like "repacking" are left alone.
