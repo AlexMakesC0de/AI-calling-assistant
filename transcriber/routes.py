@@ -2,6 +2,7 @@
 
 import logging
 import tempfile
+import time
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -90,6 +91,7 @@ def transcribe():
 
     try:
         # Step 1: Transcribe with word timestamps
+        start_time = time.perf_counter()
         logger.info("Transcribing '%s'...", file.filename)
         words, detected_language, language_probability = transcribe_with_timestamps(
             process_path,
@@ -97,6 +99,7 @@ def transcribe():
         )
 
         if not words:
+            elapsed = time.perf_counter() - start_time
             return jsonify({
                 "text": "",
                 "plain_text": "",
@@ -106,6 +109,7 @@ def transcribe():
                 "detected_language": detected_language,
                 "language_probability": language_probability,
                 "segments": [],
+                "processing_time_seconds": round(elapsed, 2),
             }), 200
 
         plain_text = build_plain_transcript(words)
@@ -153,6 +157,7 @@ def transcribe():
                 "end": words[-1]["end"],
             }]
 
+        elapsed = time.perf_counter() - start_time
         result = {
             "text": diarized_text,
             "plain_text": plain_text,
@@ -162,12 +167,14 @@ def transcribe():
             "detected_language": detected_language,
             "language_probability": language_probability,
             "segments": segments,
+            "processing_time_seconds": round(elapsed, 2),
         }
 
         logger.info(
-            "Transcription complete: %d words, %d speakers detected",
+            "Transcription complete: %d words, %d speakers detected, %.2fs",
             len(words),
             speakers_detected,
+            elapsed,
         )
         return jsonify(result), 200
 

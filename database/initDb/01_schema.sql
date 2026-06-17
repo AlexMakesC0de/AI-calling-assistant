@@ -83,3 +83,20 @@ CREATE INDEX IF NOT EXISTS idx_transcription_form_id ON incident_transcription(i
 CREATE INDEX IF NOT EXISTS idx_incident_form_file_id ON incident_form(file_id);
 CREATE INDEX IF NOT EXISTS idx_transcription_lang ON incident_transcription(lang_code);
 
+CREATE TABLE IF NOT EXISTS name_dictionary (
+    id        SERIAL PRIMARY KEY,
+    value     VARCHAR(100) NOT NULL,
+    category  VARCHAR(20)  NOT NULL CHECK (category IN ('first_name', 'tussenvoegsel')),
+    locale    VARCHAR(10),
+    UNIQUE (value, category)
+);
+
+CREATE TABLE IF NOT EXISTS profanity_terms (
+    id      SERIAL PRIMARY KEY,
+    term    VARCHAR(100) NOT NULL UNIQUE,
+    locale  VARCHAR(10)
+);
+
+CREATE INDEX IF NOT EXISTS idx_name_dict_category ON name_dictionary (category);
+CREATE INDEX IF NOT EXISTS idx_name_dict_locale   ON name_dictionary (locale);
+

@@ -37,7 +37,7 @@ class PostgresRepository:
             try:
                 with conn.cursor() as cur:
                     # Ensure prerequisite tables exist (normally created by
-                    # database/initDb/schema.sql, but needed if init hasn't run).
+                    # database/initDb/01_schema.sql, but needed if init hasn't run).
                     cur.execute(
                         """
                         CREATE TABLE IF NOT EXISTS account (
