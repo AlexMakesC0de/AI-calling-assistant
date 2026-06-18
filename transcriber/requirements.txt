@@ -1,4 +1,5 @@
---extra-index-url https://download.pytorch.org/whl/cpu
+--extra-index-url https://download.pytorch.org/whl/cu128
+# --extra-index-url https://download.pytorch.org/whl/cpu
 flask==3.1.*
 gunicorn==23.*
 faster-whisper==1.*

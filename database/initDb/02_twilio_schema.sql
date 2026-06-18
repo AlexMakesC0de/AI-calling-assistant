@@ -1,6 +1,6 @@
 -- Twilio dashboard extension to the existing schema.
 -- Adds one table (twilio_call) and seeds lookup rows.
--- Applied automatically by the Postgres container after schema.sql thanks to the 02_ prefix.
+-- Depends on 01_schema.sql (recordSession, file, fileType, account tables).
 
 CREATE TABLE IF NOT EXISTS twilio_call (
     id                    INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

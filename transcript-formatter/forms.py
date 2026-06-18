@@ -16,12 +16,13 @@ from config import (
     TRANSLATION_CHUNK_MAX_CHARS,
     DEFAULT_INCLUDE_DUTCH_TRANSLATION,
 )
-from ollama_client import _ai_fill_form, _resolve_ollama_model, _strip_markdown_fences
+from ollama_client import _ai_fill_form, _resolve_ollama_model, _strip_markdown_fences, _generate_clean_summary, _summary_looks_like_transcript
 from transcript_processor import (
     _apply_transcript_heuristics,
+    _normalize_proper_nouns,
     _sanitize_steps_taken,
 )
-from content_filter import _apply_content_filter
+from content_filter import _apply_content_filter, filter_text
 from confidence_scoring import _extract_confidence
 from output_filters import apply_pii_redaction, evaluate_confidence_review
 import requests
@@ -87,7 +88,7 @@ def _likely_untranslated_english(source: str, translated: str) -> bool:
     return any(marker in src_l for marker in english_markers)
 
 
-def _translate_text_to_dutch(text: str, deadline: float | None = None) -> str:
+def _translate_text_to_dutch(text: str, deadline: float | None = None, model_override: str | None = None) -> str:
     """Translate text to Dutch and return source text on failure."""
     source = (text or "").strip()
     if not source:
@@ -148,7 +149,7 @@ def _translate_text_to_dutch(text: str, deadline: float | None = None) -> str:
         )
 
         try:
-            model_name = _resolve_ollama_model()
+            model_name = model_override.strip() if model_override and model_override.strip() else _resolve_ollama_model()
             resp = http_client.post(
                 f"{OLLAMA_URL}/api/generate",
                 json={
@@ -222,9 +223,22 @@ def build_incident_form(data: dict) -> dict:
     now = datetime.now(timezone.utc)
     form_id = str(uuid.uuid4())
     transcript_text = data["transcript"]
+    model_override = data.get("model") or None
 
     # AI reads the transcript and fills out all form fields
-    ai_fields = _ai_fill_form(transcript_text)
+    ai_fields = _ai_fill_form(transcript_text, model_override=model_override)
+    ai_fields = _normalize_proper_nouns(ai_fields)
+
+    # If the model copied raw transcript lines into call_summary (Speaker 1/2
+    # labels visible), fire a dedicated focused summary call to replace it.
+    if _summary_looks_like_transcript(ai_fields.get("call_summary", "")):
+        logger.warning("call_summary contains raw transcript labels — retrying with focused summary prompt")
+        model_name = model_override.strip() if model_override and model_override.strip() else _resolve_ollama_model()
+        clean = _generate_clean_summary(transcript_text, model_name)
+        if clean:
+            ai_fields["call_summary"] = clean
+            ai_fields["call_summary_confidence"] = "medium"
+
     ai_fields = _apply_transcript_heuristics(ai_fields, transcript_text)
     ai_fields["steps_taken"] = _sanitize_steps_taken(
         transcript_text,
@@ -330,7 +344,7 @@ def build_incident_form(data: dict) -> dict:
 
         # --- Raw transcript for reference ---
         "transcript": {
-            "full_text": transcript_text,
+            "full_text": filter_text(transcript_text, metadata),
             "word_count": len(transcript_text.split()),
         },
 
@@ -345,15 +359,13 @@ def build_incident_form(data: dict) -> dict:
     if include_dutch_translation:
         # Only translate short summary fields — NOT the full transcript.
         # Full transcript translation is the #1 cause of timeouts on CPU.
-        dutch_summary = _translate_text_to_dutch(str(form.get("call_summary", "")))
-        dutch_description = _translate_text_to_dutch(
-            str(form.get("issue", {}).get("description", ""))
+        dutch_summary = _translate_text_to_dutch(
+            str(form.get("call_summary", "")), model_override=model_override
         )
         form["translated_nl"] = {
             "language": "nl",
             "transcript_text": dutch_summary,
             "call_summary": dutch_summary,
-            "issue_description": dutch_description,
         }
 
     return form

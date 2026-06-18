@@ -24,6 +24,9 @@ COPY package.json package-lock.json ./
 # Prisma's `postinstall` script runs `prisma generate`, which needs the
 # schema to be present at install time.
 COPY prisma ./prisma
+# prisma generate validates env("DATABASE_URL") from the schema even though
+# it never connects — supply a placeholder so the build doesn't fail.
+ARG DATABASE_URL=postgresql://x:x@x:5432/x
 RUN npm ci
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -39,6 +42,8 @@ COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production
 
+# ARG does not carry across FROM boundaries — redeclare for this stage.
+ARG DATABASE_URL=postgresql://x:x@x:5432/x
 # Re-run in case the schema changed after `npm ci`'s postinstall snapshot.
 RUN npx prisma generate
 RUN npm run build
