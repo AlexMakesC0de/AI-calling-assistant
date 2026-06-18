@@ -60,7 +60,7 @@ export default async function CallsPage() {
             </TableHeader>
             <TableBody>
               {conversations.map((conv) => (
-                <TableRow key={conv.id}>
+                <TableRow key={conv.id} className="cursor-pointer">
                   <TableCell>
                     <Link href={`/calls/${conv.id}`} className="hover:underline">
                       <div className="font-medium">{conv.contactName || conv.contactPhone}</div>
@@ -69,16 +69,24 @@ export default async function CallsPage() {
                       )}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-sm"><TimeAgo date={conv.lastCallAt} /></TableCell>
-                  <TableCell className="text-sm tabular-nums">{formatDuration(conv.lastDuration)}</TableCell>
-                  <TableCell>
-                    {conv.lastStatus && (
-                      <Badge variant={statusVariant(conv.lastStatus)}>
-                        {conv.lastStatus}
-                      </Badge>
-                    )}
+                  <TableCell className="text-sm">
+                    <Link href={`/calls/${conv.id}`} className="block"><TimeAgo date={conv.lastCallAt} /></Link>
                   </TableCell>
-                  <TableCell className="text-right text-sm tabular-nums">{conv.callCount}</TableCell>
+                  <TableCell className="text-sm tabular-nums">
+                    <Link href={`/calls/${conv.id}`} className="block">{formatDuration(conv.lastDuration)}</Link>
+                  </TableCell>
+                  <TableCell>
+                    <Link href={`/calls/${conv.id}`} className="block">
+                      {conv.lastStatus && (
+                        <Badge variant={statusVariant(conv.lastStatus)}>
+                          {conv.lastStatus}
+                        </Badge>
+                      )}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-right text-sm tabular-nums">
+                    <Link href={`/calls/${conv.id}`} className="block">{conv.callCount}</Link>
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
