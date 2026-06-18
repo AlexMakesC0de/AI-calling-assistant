@@ -8,7 +8,7 @@ function getSecret() {
   return new TextEncoder().encode(raw);
 }
 
-const PUBLIC_PREFIXES = ["/login", "/webhooks"];
+const PUBLIC_PREFIXES = ["/login", "/webhook"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -28,7 +28,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Webhooks are public (called by external services)
-  if (pathname.startsWith("/webhooks")) {
+  if (pathname.startsWith("/webhook")) {
     return NextResponse.next();
   }
 
