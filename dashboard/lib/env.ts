@@ -16,7 +16,7 @@ const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
 
 const emailAttachmentsDir = (process.env.EMAIL_ATTACHMENTS_DIR ?? "/data/shared/email-attachments").replace(/\/$/, "");
 const whatsappMediaDir = (process.env.WHATSAPP_MEDIA_DIR ?? "/data/shared/whatsapp-media").replace(/\/$/, "");
-const callRecordingsDir = (process.env.CALL_RECORDINGS_DIR ?? "/data/shared/call-recordings").replace(/\/$/, "");
+const callRecordingsDir = (process.env.CALL_RECORDINGS_DIR ?? "/tmp/call-recordings").replace(/\/$/, "");
 const outlookAttachmentsDir = (process.env.OUTLOOK_ATTACHMENTS_DIR ?? "/data/shared/outlook-attachments").replace(/\/$/, "");
 
 const formatterBaseUrl = (process.env.FORMATTER_URL ?? "http://localhost:5001").replace(/\/$/, "");
