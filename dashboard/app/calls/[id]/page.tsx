@@ -8,6 +8,7 @@ import { getAnalysisMap } from "@/lib/analyze-content";
 import { formatDateTime } from "@/lib/utils";
 import { CopyButton } from "@/components/copy-button";
 import { CallAnalyzeWrapper } from "./call-analyze-wrapper";
+import { CallTranscribeWrapper } from "./call-transcribe-wrapper";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ function formatDuration(seconds: number | null): string {
 function statusVariant(status: string): "default" | "solid" | "muted" {
   switch (status) {
     case "completed":
+    case "transcribed":
       return "muted";
     case "failed":
       return "solid";
@@ -101,6 +103,9 @@ function CallCard({
         }
       : null;
 
+  const hasRecording = Boolean(call.localRecordingPath || call.recordingTwilioUrl);
+  const hasTranscript = Boolean(call.transcriptText);
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -145,7 +150,7 @@ function CallCard({
         </div>
 
         {/* Audio player */}
-        {(call.localRecordingPath || call.recordingTwilioUrl) && (
+        {hasRecording && (
           <>
             <Separator />
             <div>
@@ -157,8 +162,21 @@ function CallCard({
           </>
         )}
 
+        {/* Transcribe button */}
+        {hasRecording && !hasTranscript && (
+          <>
+            <Separator />
+            <CallTranscribeWrapper
+              callId={call.id}
+              hasRecording={hasRecording}
+              hasTranscript={hasTranscript}
+              initialStatus={call.status}
+            />
+          </>
+        )}
+
         {/* Transcript */}
-        {call.transcriptText && (
+        {hasTranscript && (
           <>
             <Separator />
             <div>
@@ -186,7 +204,7 @@ function CallCard({
         )}
 
         {/* Analysis / re-analyze button */}
-        {call.transcriptText && (
+        {hasTranscript && (
           <>
             <Separator />
             <CallAnalyzeWrapper callId={call.id} existingAnalysis={analysisProps} />

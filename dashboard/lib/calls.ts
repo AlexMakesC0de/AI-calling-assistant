@@ -93,3 +93,33 @@ export async function getConversation(id: number): Promise<CallConversationDetai
 export async function getCallById(callId: number) {
   return prisma.twilioCall.findUnique({ where: { id: callId } });
 }
+
+export async function fetchRecordingMp3(recordingUrl: string): Promise<Buffer> {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) throw new Error("Twilio credentials not configured");
+
+  const mp3Url = recordingUrl.endsWith(".mp3")
+    ? recordingUrl
+    : `${recordingUrl}.mp3`;
+
+  const auth = "Basic " + Buffer.from(`${sid}:${token}`).toString("base64");
+  const initial = await fetch(mp3Url, {
+    headers: { Authorization: auth },
+    redirect: "manual",
+  });
+
+  let res: Response;
+  const location = initial.headers.get("location");
+  if (initial.status >= 300 && initial.status < 400 && location) {
+    res = await fetch(location);
+  } else {
+    res = initial;
+  }
+
+  if (!res.ok) {
+    throw new Error(`Twilio MP3 download failed: ${res.status} ${res.statusText}`);
+  }
+
+  return Buffer.from(await res.arrayBuffer());
+}

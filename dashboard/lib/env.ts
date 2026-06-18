@@ -23,6 +23,7 @@ const formatterBaseUrl = (process.env.FORMATTER_URL ?? "http://localhost:5001").
 
 export const env = {
   voiceAppUploadUrl: process.env.VOICE_APP_UPLOAD_URL ?? "http://localhost:5000/upload",
+  transcriberBaseUrl: (process.env.TRANSCRIBER_URL ?? "http://localhost:9000").replace(/\/$/, ""),
   formatterBaseUrl,
   emailAttachmentsDir,
   whatsappMediaDir,

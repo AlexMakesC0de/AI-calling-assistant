@@ -19,6 +19,7 @@ function formatDuration(seconds: number | null): string {
 function statusVariant(status: string | null): "default" | "solid" | "muted" {
   switch (status) {
     case "completed":
+    case "transcribed":
       return "muted";
     case "failed":
       return "solid";
@@ -35,7 +36,7 @@ export default async function CallsPage() {
       <div>
         <h1 className="text-2xl font-medium tracking-tight">Calls</h1>
         <p className="text-sm text-muted-foreground">
-          Inbound voice call recordings grouped by caller. Recordings are automatically transcribed and analyzed.
+          Inbound voice call recordings grouped by caller.
         </p>
       </div>
 
