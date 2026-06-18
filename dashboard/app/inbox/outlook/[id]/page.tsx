@@ -155,6 +155,7 @@ async function renderGmailMessage(id: string) {
             ← Back
           </Link>
         </div>
+      </div>
 
       {(incident || formId) && (
         <Card>
