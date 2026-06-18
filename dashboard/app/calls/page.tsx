@@ -60,33 +60,28 @@ export default async function CallsPage() {
             </TableHeader>
             <TableBody>
               {conversations.map((conv) => (
-                <TableRow key={conv.id} className="cursor-pointer">
+                <TableRow key={conv.id} className="group relative cursor-pointer">
                   <TableCell>
-                    <Link href={`/calls/${conv.id}`} className="hover:underline">
+                    <Link
+                      href={`/calls/${conv.id}`}
+                      className="after:absolute after:inset-0"
+                    >
                       <div className="font-medium">{conv.contactName || conv.contactPhone}</div>
                       {conv.contactName && (
                         <div className="font-mono text-xs text-muted-foreground">{conv.contactPhone}</div>
                       )}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-sm">
-                    <Link href={`/calls/${conv.id}`} className="block"><TimeAgo date={conv.lastCallAt} /></Link>
-                  </TableCell>
-                  <TableCell className="text-sm tabular-nums">
-                    <Link href={`/calls/${conv.id}`} className="block">{formatDuration(conv.lastDuration)}</Link>
-                  </TableCell>
+                  <TableCell className="text-sm"><TimeAgo date={conv.lastCallAt} /></TableCell>
+                  <TableCell className="text-sm tabular-nums">{formatDuration(conv.lastDuration)}</TableCell>
                   <TableCell>
-                    <Link href={`/calls/${conv.id}`} className="block">
-                      {conv.lastStatus && (
-                        <Badge variant={statusVariant(conv.lastStatus)}>
-                          {conv.lastStatus}
-                        </Badge>
-                      )}
-                    </Link>
+                    {conv.lastStatus && (
+                      <Badge variant={statusVariant(conv.lastStatus)}>
+                        {conv.lastStatus}
+                      </Badge>
+                    )}
                   </TableCell>
-                  <TableCell className="text-right text-sm tabular-nums">
-                    <Link href={`/calls/${conv.id}`} className="block">{conv.callCount}</Link>
-                  </TableCell>
+                  <TableCell className="text-right text-sm tabular-nums">{conv.callCount}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

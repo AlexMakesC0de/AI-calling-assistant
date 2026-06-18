@@ -21,17 +21,15 @@ export async function POST(req: NextRequest) {
 
   if (callSid && callStatus) {
     try {
-      const data: Record<string, unknown> = {
-        status: callStatus,
-        errorCode,
-        errorMessage,
-      };
-      if (fromNumber) data.fromNumber = fromNumber;
-      if (toNumber) data.toNumber = toNumber;
-
       await prisma.twilioCall.updateMany({
         where: { callSid },
-        data,
+        data: {
+          status: callStatus,
+          errorCode,
+          errorMessage,
+          ...(fromNumber ? { fromNumber } : {}),
+          ...(toNumber ? { toNumber } : {}),
+        },
       });
     } catch (err) {
       console.error("[call-status] DB update failed:", err);
