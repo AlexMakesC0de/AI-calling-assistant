@@ -10,6 +10,7 @@ import { asFormData, sentimentTone, stepsToList } from "@/lib/incident-form";
 import { searchMailpitMessages, type MailpitMessageSummary } from "@/lib/mailpit";
 import { formatDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { CopyButton } from "@/components/copy-button";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +51,11 @@ export default async function IncidentDetailPage({ params }: { params: Promise<{
       <div className="flex items-center justify-between">
         <div className="space-y-1">
           <h1 className="text-2xl font-medium tracking-tight">Incident #{incident.id}</h1>
-          {data.form_id ? <p className="font-mono text-xs text-muted-foreground">{data.form_id}</p> : null}
+          {data.form_id ? (
+            <p className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground">
+              {data.form_id} <CopyButton value={data.form_id} />
+            </p>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
           <Button asChild variant="outline">
@@ -126,7 +131,12 @@ export default async function IncidentDetailPage({ params }: { params: Promise<{
           <CardContent className="space-y-2 text-sm">
             <Row label="Name">{data.caller_information?.name ?? "—"}</Row>
             <Row label="Account">{data.caller_information?.account_or_reference ?? "—"}</Row>
-            <Row label="Contact">{data.caller_information?.contact_info ?? "—"}</Row>
+            <Row label="Contact">
+              <span className="flex items-center gap-1.5">
+                {data.caller_information?.contact_info ?? "—"}
+                {data.caller_information?.contact_info && <CopyButton value={data.caller_information.contact_info} />}
+              </span>
+            </Row>
           </CardContent>
         </Card>
 

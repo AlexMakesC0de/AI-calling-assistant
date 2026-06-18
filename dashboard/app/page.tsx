@@ -6,8 +6,8 @@ import { StatCard } from "@/components/stat-card";
 import { prisma } from "@/lib/prisma";
 import { listMailpitMessages } from "@/lib/mailpit";
 import { asFormData, sentimentTone } from "@/lib/incident-form";
-import { formatDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { TimeAgo } from "@/components/time-ago";
 
 export const dynamic = "force-dynamic";
 
@@ -99,7 +99,7 @@ export default async function OverviewPage() {
                     className="flex items-start gap-4 px-6 py-3 hover:bg-muted/40"
                   >
                     <div className="w-32 shrink-0 text-xs text-muted-foreground">
-                      {formatDateTime(inc.completedAt)}
+                      <TimeAgo date={inc.completedAt} />
                     </div>
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-2">

@@ -13,6 +13,10 @@ import { graphJsonAuto, resolveGraphToken } from "@/lib/outlook-graph";
 import { getValidGmailToken } from "@/lib/gmail-oauth";
 import { getSession } from "@/lib/auth";
 import { formatDateTime } from "@/lib/utils";
+import { getExistingAnalysis, type SourceType } from "@/lib/analyze-content";
+import { CopyButton } from "@/components/copy-button";
+import { EmailAnalyzeWrapper } from "./email-analyze-wrapper";
+import { SaveEmailButton } from "./save-email-button";
 
 export const dynamic = "force-dynamic";
 
@@ -123,6 +127,20 @@ async function renderGmailMessage(id: string) {
 
   const formId = extractFormId(subject);
   const incident = await findIncidentByFormId(formId);
+  const analysis = await getExistingAnalysis("gmail_email" as SourceType, id);
+  const analysisProps = analysis?.pipeline_status ? {
+    label: analysis.classification_label ?? "unknown",
+    confidence: analysis.classification_confidence ?? 0,
+    reason: analysis.classification_reason ?? "",
+    incidentFormId: analysis.incident_form_id,
+    pipelineStatus: analysis.pipeline_status,
+    errorMessage: analysis.error_message,
+  } : null;
+
+  const savedEmail = await prisma.emailMessage.findFirst({
+    where: { messageIdHeader: messageId || id },
+    select: { id: true },
+  });
 
   return (
     <div className="space-y-6">
@@ -131,10 +149,12 @@ async function renderGmailMessage(id: string) {
           <h1 className="text-2xl font-medium tracking-tight">{subject}</h1>
           <p className="text-xs text-muted-foreground">{formatDateTime(date)}</p>
         </div>
-        <Link href="/inbox/outlook" className="text-sm text-muted-foreground hover:text-foreground">
-          ← Back
-        </Link>
-      </div>
+        <div className="flex items-center gap-3">
+          <SaveEmailButton messageId={id} provider="google" alreadySaved={!!savedEmail} />
+          <Link href="/inbox/outlook" className="text-sm text-muted-foreground hover:text-foreground">
+            ← Back
+          </Link>
+        </div>
 
       {(incident || formId) && (
         <Card>
@@ -154,12 +174,27 @@ async function renderGmailMessage(id: string) {
       )}
 
       <Card>
+        <CardHeader><CardTitle>AI Analysis</CardTitle></CardHeader>
+        <CardContent>
+          <EmailAnalyzeWrapper messageId={id} provider="google" existingAnalysis={analysisProps} />
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader><CardTitle>Headers</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm">
-          <Row label="From"><span className="font-mono text-xs">{from || "—"}</span></Row>
-          <Row label="To"><span className="font-mono text-xs">{to || "—"}</span></Row>
-          {cc && <Row label="CC"><span className="font-mono text-xs">{cc}</span></Row>}
-          {messageId && <Row label="Message-ID"><span className="font-mono text-xs">{messageId}</span></Row>}
+          <Row label="From">
+            <span className="inline-flex items-center gap-1.5 font-mono text-xs">
+              {from || "—"} {from && <CopyButton value={from} />}
+            </span>
+          </Row>
+          <Row label="To">
+            <span className="inline-flex items-center gap-1.5 font-mono text-xs">
+              {to || "—"} {to && <CopyButton value={to} />}
+            </span>
+          </Row>
+          {cc && <Row label="CC"><span className="inline-flex items-center gap-1.5 font-mono text-xs">{cc} <CopyButton value={cc} /></span></Row>}
+          {messageId && <Row label="Message-ID"><span className="inline-flex items-center gap-1.5 font-mono text-xs">{messageId} <CopyButton value={messageId} /></span></Row>}
           <Row label="Read">{isRead ? "Yes" : "No"}</Row>
         </CardContent>
       </Card>
@@ -244,6 +279,20 @@ async function renderOutlookMessage(id: string) {
   const formId = extractFormId(message.subject);
   const incident = await findIncidentByFormId(formId);
   const isHtml = message.body?.contentType === "html" && Boolean(message.body.content?.trim());
+  const analysis = await getExistingAnalysis("outlook_email" as SourceType, id);
+  const analysisProps = analysis?.pipeline_status ? {
+    label: analysis.classification_label ?? "unknown",
+    confidence: analysis.classification_confidence ?? 0,
+    reason: analysis.classification_reason ?? "",
+    incidentFormId: analysis.incident_form_id,
+    pipelineStatus: analysis.pipeline_status,
+    errorMessage: analysis.error_message,
+  } : null;
+
+  const savedEmail = await prisma.emailMessage.findFirst({
+    where: { messageIdHeader: message.internetMessageId ?? id },
+    select: { id: true },
+  });
 
   return (
     <div className="space-y-6">
@@ -256,6 +305,7 @@ async function renderOutlookMessage(id: string) {
           )}
         </div>
         <div className="flex items-center gap-3">
+          <SaveEmailButton messageId={id} provider="microsoft" alreadySaved={!!savedEmail} />
           {message.webLink && (
             <a
               href={message.webLink}
@@ -291,10 +341,20 @@ async function renderOutlookMessage(id: string) {
       )}
 
       <Card>
+        <CardHeader><CardTitle>AI Analysis</CardTitle></CardHeader>
+        <CardContent>
+          <EmailAnalyzeWrapper messageId={id} provider="microsoft" existingAnalysis={analysisProps} />
+        </CardContent>
+      </Card>
+
+      <Card>
         <CardHeader><CardTitle>Headers</CardTitle></CardHeader>
         <CardContent className="space-y-2 text-sm">
           <Row label="From">
-            <span className="font-mono text-xs">{message.from?.emailAddress?.address ?? "—"}</span>
+            <span className="inline-flex items-center gap-1.5 font-mono text-xs">
+              {message.from?.emailAddress?.address ?? "—"}
+              {message.from?.emailAddress?.address && <CopyButton value={message.from.emailAddress.address} />}
+            </span>
             {message.from?.emailAddress?.name && (
               <span className="ml-2 text-muted-foreground">{message.from.emailAddress.name}</span>
             )}

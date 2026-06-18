@@ -16,6 +16,7 @@ const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
 
 const emailAttachmentsDir = (process.env.EMAIL_ATTACHMENTS_DIR ?? "/data/shared/email-attachments").replace(/\/$/, "");
 const whatsappMediaDir = (process.env.WHATSAPP_MEDIA_DIR ?? "/data/shared/whatsapp-media").replace(/\/$/, "");
+const callRecordingsDir = (process.env.CALL_RECORDINGS_DIR ?? "/data/shared/call-recordings").replace(/\/$/, "");
 const outlookAttachmentsDir = (process.env.OUTLOOK_ATTACHMENTS_DIR ?? "/data/shared/outlook-attachments").replace(/\/$/, "");
 
 const formatterBaseUrl = (process.env.FORMATTER_URL ?? "http://localhost:5001").replace(/\/$/, "");
@@ -25,6 +26,7 @@ export const env = {
   formatterBaseUrl,
   emailAttachmentsDir,
   whatsappMediaDir,
+  callRecordingsDir,
   outlookAttachmentsDir,
   mailpitBaseUrl,
   ollamaBaseUrl,
@@ -56,6 +58,7 @@ export const env = {
     email: process.env.EMAIL_HEALTH_URL ?? "http://localhost:5002/health",
     mailpit: process.env.MAILPIT_HEALTH_URL ?? `${mailpitBaseUrl}/api/v1/info`,
     telephony: process.env.TELEPHONY_HEALTH_URL ?? "http://localhost:5010/health",
+    callIngest: process.env.CALL_INGEST_HEALTH_URL ?? "http://localhost:5012/health",
     ollama: process.env.OLLAMA_HEALTH_URL ?? `${ollamaBaseUrl}/api/version`,
   },
 };

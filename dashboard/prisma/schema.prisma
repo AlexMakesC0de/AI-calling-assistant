@@ -80,6 +80,7 @@ model IncidentForm {
   generalInformation  IncidentGeneralInformation?
   transcriptions      IncidentTranscription[]
   whatsappMessages    WhatsAppMessage[]
+  twilioCalls         TwilioCall[]
 
   @@index([fileId], map: "idx_incident_form_file_id")
   @@map("incident_form")
@@ -112,8 +113,46 @@ model IncidentTranscription {
   @@map("incident_transcription")
 }
 
-// twilio_call table is intentionally NOT modeled — the table still exists in
-// the DB for rollback safety, but the dashboard no longer reads or writes it.
+model CallConversation {
+  id            Int          @id @default(autoincrement())
+  contactPhone  String       @unique @map("contact_phone") @db.VarChar(30)
+  contactName   String?      @map("contact_name") @db.VarChar(255)
+  lastCallAt    DateTime     @default(now()) @map("last_call_at") @db.Timestamptz(6)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  calls         TwilioCall[]
+
+  @@map("call_conversation")
+}
+
+model TwilioCall {
+  id                  Int               @id @default(autoincrement())
+  recordingSessionId  Int?              @unique @map("recordingsession_id")
+  conversationId      Int?              @map("conversation_id")
+  callSid             String            @unique @map("call_sid") @db.VarChar(64)
+  direction           String            @db.VarChar(16)
+  fromNumber          String?           @map("from_number") @db.VarChar(32)
+  toNumber            String?           @map("to_number") @db.VarChar(32)
+  status              String            @db.VarChar(32)
+  durationSeconds     Int?              @map("duration_seconds")
+  recordingSid        String?           @unique @map("recording_sid") @db.VarChar(64)
+  recordingTwilioUrl  String?           @map("recording_twilio_url")
+  recordingFileId     Int?              @map("recording_file_id")
+  incidentFormId      Int?              @map("incident_form_id")
+  transcriptText      String?           @map("transcript_text")
+  localRecordingPath  String?           @map("local_recording_path")
+  errorCode           String?           @map("error_code") @db.VarChar(16)
+  errorMessage        String?           @map("error_message")
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  conversation        CallConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  incidentForm        IncidentForm?     @relation(fields: [incidentFormId], references: [id], onDelete: SetNull)
+
+  @@index([status], map: "idx_twilio_call_status")
+  @@index([createdAt(sort: Desc)], map: "idx_twilio_call_created_at")
+  @@index([conversationId], map: "idx_twilio_call_conversation")
+  @@index([incidentFormId], map: "idx_twilio_call_incident")
+  @@map("twilio_call")
+}
 
 model WhatsAppConversation {
   id             Int                @id @default(autoincrement())
@@ -211,6 +250,27 @@ model EmailAttachment {
 
   @@unique([messageId, attachmentIndex], map: "uq_email_att_msg_index")
   @@map("email_attachment")
+}
+
+model ContentAnalysis {
+  id                       Int       @id @default(autoincrement())
+  sourceType               String    @map("source_type") @db.VarChar(30)
+  sourceId                 String    @map("source_id")
+  accountId                Int       @map("account_id")
+  classificationLabel      String?   @map("classification_label") @db.VarChar(20)
+  classificationConfidence Float?    @map("classification_confidence") @db.Real
+  classificationReason     String?   @map("classification_reason")
+  incidentFormId           Int?      @map("incident_form_id")
+  pipelineStatus           String    @default("pending") @map("pipeline_status") @db.VarChar(30)
+  errorMessage             String?   @map("error_message")
+  contentPreview           String?   @map("content_preview")
+  sender                   String?
+  analyzedAt               DateTime  @default(now()) @map("analyzed_at") @db.Timestamptz(6)
+
+  @@unique([sourceType, sourceId], map: "uq_content_analysis_source")
+  @@index([accountId], map: "idx_content_analysis_account")
+  @@index([incidentFormId], map: "idx_content_analysis_incident")
+  @@map("content_analysis")
 }
 
 model OutlookAttachmentCache {

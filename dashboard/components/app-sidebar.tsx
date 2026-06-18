@@ -7,9 +7,11 @@ import {
   LayoutDashboard,
   Upload,
   AlertTriangle,
+  BrainCircuit,
   FileText,
   Inbox,
   MessageCircle,
+  Phone,
   Search,
   Settings,
   ShieldCheck,
@@ -37,12 +39,14 @@ const workspaceItems = [
   { href: "/", label: "Overview", icon: LayoutDashboard, match: (p: string) => p === "/" },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle, match: (p: string) => p.startsWith("/incidents") },
   { href: "/generate-word", label: "Issue History", icon: FileText, match: (p: string) => p.startsWith("/generate-word") },
+  { href: "/analysis", label: "Analysis", icon: BrainCircuit, match: (p: string) => p.startsWith("/analysis") },
 ]
 
 const ingestItems = [
   { href: "/upload", label: "Upload", icon: Upload, match: (p: string) => p.startsWith("/upload") },
   { href: "/inbox", label: "Inbox", icon: Inbox, match: (p: string) => p.startsWith("/inbox") },
   { href: "/whatsapp", label: "WhatsApp", icon: MessageCircle, match: (p: string) => p.startsWith("/whatsapp") },
+  { href: "/calls", label: "Calls", icon: Phone, match: (p: string) => p.startsWith("/calls") },
 ]
 
 const utilityItems = [

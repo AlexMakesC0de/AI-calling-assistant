@@ -130,6 +130,7 @@ services:
       PROFANITY_FILTER: "${PROFANITY_FILTER:-true}"
       PROFANITY_CENSOR_CHAR: "${PROFANITY_CENSOR_CHAR:-*}"
 
+      DATABASE_URL: ${VOICE_APP_DATABASE_URL:-}
       DB_HOST: ${DB_HOST:-database}
       DB_PORT: ${DB_PORT:-5432}
       DB_NAME: ${POSTGRES_DB:-support_db}
@@ -233,6 +234,48 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5011/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # -----------------------------------------------------------------------
+  # 4b. Call Ingest – Twilio Voice call recording handler.
+  #     Receives inbound voice calls, records them via TwiML, downloads
+  #     the MP3 recording, and forwards to the voice-app /upload pipeline.
+  # -----------------------------------------------------------------------
+  call-ingest:
+    restart: unless-stopped
+    build:
+      context: ./call-ingest
+      dockerfile: Dockerfile
+    container_name: support-call-ingest
+    networks:
+      - app-network
+    ports:
+      - "5012:5012"
+    environment:
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_VALIDATE_SIGNATURE: ${TWILIO_VALIDATE_SIGNATURE:-true}
+      CALL_PUBLIC_BASE_URL: ${CALL_PUBLIC_BASE_URL:-}
+      CALL_GREETING_TEXT: ${CALL_GREETING_TEXT:-Thank you for calling support. Please describe your issue after the tone.}
+      CALL_MAX_RECORDING_SECONDS: ${CALL_MAX_RECORDING_SECONDS:-300}
+      VOICE_APP_UPLOAD_URL: ${VOICE_APP_UPLOAD_URL:-http://voice-app:5000/upload}
+      VOICE_APP_FORWARD_TIMEOUT: ${VOICE_APP_FORWARD_TIMEOUT:-900}
+      MEDIA_DOWNLOAD_TIMEOUT: ${MEDIA_DOWNLOAD_TIMEOUT:-120}
+      CALL_RECORDINGS_DIR: /data/shared/call-recordings
+      CALL_EVENTS_DIR: /data/shared/call-events
+      CALL_TMP_DIR: /tmp/calls
+      DATABASE_URL: postgresql://${POSTGRES_USER:-support}:${POSTGRES_PASSWORD:-support_secret}@database:5432/${POSTGRES_DB:-support_db}
+    volumes:
+      - .\local-storage\shared:/data/shared
+    depends_on:
+      voice-app:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5012/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3

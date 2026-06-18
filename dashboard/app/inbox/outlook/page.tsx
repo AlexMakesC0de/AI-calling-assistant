@@ -15,6 +15,8 @@ import { getValidGmailToken, getStoredGmailToken } from "@/lib/gmail-oauth";
 import { getSession } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { formatDateTime, cn } from "@/lib/utils";
+import { getAnalysisMap, type SourceType } from "@/lib/analyze-content";
+import { AnalysisBadge } from "@/components/analyze-button";
 import { DisconnectButton } from "./disconnect-button";
 
 export const dynamic = "force-dynamic";
@@ -205,6 +207,12 @@ export default async function EmailInboxPage({ searchParams }: { searchParams: S
   const showConnect = !anyConnected && (hasMicrosoftId || hasGoogleId);
   const connectedEmail = msConnected ? msToken?.mailbox_email : gmailConnected ? gmailToken?.mailbox_email : null;
 
+  const analysisSourceType: SourceType = connectedProvider === "google" ? "gmail_email" : "outlook_email";
+  const analysisMap = await getAnalysisMap(
+    analysisSourceType,
+    messages.map((m) => m.id),
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4">
@@ -349,6 +357,12 @@ export default async function EmailInboxPage({ searchParams }: { searchParams: S
                           {msg.subject}
                         </span>
                         {msg.importance === "high" ? <Badge variant="solid">high</Badge> : null}
+                        {analysisMap.has(msg.id) && (
+                          <AnalysisBadge
+                            label={analysisMap.get(msg.id)!.label}
+                            incidentFormId={analysisMap.get(msg.id)!.incidentFormId}
+                          />
+                        )}
                       </div>
                       {msg.bodyPreview ? (
                         <p className="line-clamp-1 text-xs text-muted-foreground">{msg.bodyPreview}</p>
