@@ -1,82 +1,31 @@
-###############################################################################
-# docker-compose.native-ollama.yml  (OPT-IN OVERLAY — additive, non-destructive)
-#
-# Purpose:
-#   Use the HOST's native, GPU-accelerated Ollama (e.g. Apple Metal on macOS,
-#   or CUDA on a Linux host) instead of the bundled CPU-only Docker `ollama`
-#   container. On macOS, Docker cannot access the GPU, so the in-container
-#   Ollama runs on CPU and is very slow; the native host Ollama is far faster.
-#
-#   This file changes NOTHING in docker-compose.yml. Without it, the stack
-#   behaves exactly as before (Docker Ollama). You only get native Ollama when
-#   you explicitly add this file with a second -f.
-#
-#   It also remaps the voice-app from host port 5000 -> 5050, because macOS
-#   ControlCenter (AirPlay Receiver) occupies port 5000 and makes the default
-#   `5000:5000` bind fail. After `up`, open the app at http://localhost:5050
-#   (the container still listens on 5000 internally, so service-to-service URLs
-#   are unaffected). If you'd rather keep port 5000, turn off AirPlay Receiver:
-#   System Settings -> General -> AirDrop & Handoff -> AirPlay Receiver (Off),
-#   then remove the voice-app block below.
-#
-# Usage (note: this file must come AFTER the base file):
-#   docker compose -f docker-compose.yml -f docker-compose.native-ollama.yml up -d --build
-#   # add --profile dev as usual if you want mailpit:
-#   docker compose -f docker-compose.yml -f docker-compose.native-ollama.yml --profile dev up -d --build
-#
-# Prerequisites:
-#   1. Native Ollama is running on the host (`ollama serve`, or the macOS app).
-#      Docker Desktop reaches it automatically via host.docker.internal.
-#   2. The model named by OLLAMA_MODEL exists in your NATIVE Ollama. The default
-#      is llama3.1:8b — pull it once on the host if you don't have it:
-#         ollama pull llama3.1:8b
-#      (or set OLLAMA_MODEL to a model you already have, e.g. gemma2:9b)
-#   3. The dashboard's embeddings use OLLAMA_EMBED_MODEL (default nomic-embed-text);
-#      pull that natively too if you use vector search:  ollama pull nomic-embed-text
-#
-# Linux note: host.docker.internal is built in on Docker Desktop (macOS/Windows).
-# On native Linux Docker, add to each repointed service:
-#     extra_hosts: ["host.docker.internal:host-gateway"]
-# and make sure the host Ollama listens on a reachable interface
-# (OLLAMA_HOST=0.0.0.0:11434), not only 127.0.0.1.
-###############################################################################
+# Opt-in overlay: use the host's native GPU Ollama (Apple Metal / CUDA) instead
+# of the CPU-only Docker ollama, which is slow and OOM-kills larger models on macOS.
+# Additive — changes nothing in docker-compose.yml. Activate with a second -f:
+#   docker compose -f docker-compose.yml -f docker-compose.native-ollama.yml up -d
+# Requires the host Ollama running with OLLAMA_MODEL (and OLLAMA_EMBED_MODEL) pulled.
+# Linux hosts: also add `extra_hosts: ["host.docker.internal:host-gateway"]` per service.
 
 services:
-  # Keep the bundled CPU Ollama from starting: park it behind an opt-in profile
-  # so the default service set no longer includes it. Nothing depends on it once
-  # transcript-formatter's dependency is removed below, so it is cleanly skipped.
+  # Park the bundled CPU Ollama (and its init helper) behind a profile so they don't start.
   ollama:
     profiles:
       - docker-ollama
-
-  # Some branches (e.g. feat/performanceImprovement) add an `ollama-init` helper
-  # that pulls the model INTO the Docker Ollama and depends on it. Park it behind
-  # the same profile so it doesn't drag the Docker Ollama back in. Harmless on
-  # branches that don't define this service (override of an absent service is a
-  # no-op). Pull models into your NATIVE Ollama instead (see header).
   ollama-init:
     profiles:
       - docker-ollama
 
-  # LLM form-filling: point at the host's native Ollama and drop the wait-for
-  # Docker-ollama startup dependency (it is the only thing it depended on).
   transcript-formatter:
     environment:
       OLLAMA_URL: http://host.docker.internal:11434
-    # Remove ONLY the wait-on-Docker-ollama dependency; leave any other
-    # depends_on entries (e.g. the database, on branches that add one) intact.
     depends_on:
-      ollama: !reset null
+      ollama: !reset null   # drop the wait-on-Docker-ollama dependency
 
-  # Dashboard uses Ollama only for embeddings (vector search). Repoint it too so
-  # it does not try to reach the now-absent Docker ollama container.
   dashboard:
     environment:
       OLLAMA_URL: http://host.docker.internal:11434
 
-  # macOS AirPlay Receiver holds host port 5000, so the default 5000:5000 bind
-  # fails. Publish on 5050 instead. !override replaces the base ports list
-  # (a plain list would MERGE/append and keep the conflicting 5000:5000).
+  # macOS AirPlay Receiver holds port 5000; publish on 5050 instead.
+  # !override replaces the base ports list (a plain list would append, keeping 5000).
   voice-app:
     ports: !override
       - "5050:5000"
