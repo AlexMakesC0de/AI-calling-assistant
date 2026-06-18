@@ -1,6 +1,7 @@
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlparse
 
 
 DEFAULT_ALLOWED_EXTENSIONS = {"wav", "mp3", "ogg", "flac", "m4a", "webm"}
@@ -63,6 +64,23 @@ class AppConfig:
             os.getenv("WHISPER_URL", "http://localhost:9000/transcribe"),
         )
 
+        db_url = os.getenv("DATABASE_URL")
+        if db_url:
+            parsed = urlparse(db_url)
+            db_host = parsed.hostname or "localhost"
+            db_port = parsed.port or 5432
+            db_name = (parsed.path or "/support_db").lstrip("/")
+            db_user = parsed.username or "support"
+            db_password = parsed.password or "support_secret"
+        else:
+            db_host = os.getenv("DB_HOST", "localhost")
+            db_port = int(os.getenv("DB_PORT", "5432"))
+            db_name = os.getenv("DB_NAME", os.getenv("POSTGRES_DB", "support_db"))
+            db_user = os.getenv("DB_USER", os.getenv("POSTGRES_USER", "support"))
+            db_password = os.getenv(
+                "DB_PASSWORD", os.getenv("POSTGRES_PASSWORD", "support_secret")
+            )
+
         return cls(
             upload_dir=upload_dir,
             whisper_url=whisper_url,
@@ -75,13 +93,11 @@ class AppConfig:
             max_file_size_mb=int(os.getenv("MAX_FILE_SIZE_MB", "50")),
             allowed_extensions=frozenset(DEFAULT_ALLOWED_EXTENSIONS),
             allowed_mime_types=frozenset(DEFAULT_ALLOWED_MIME_TYPES),
-            db_host=os.getenv("DB_HOST", "localhost"),
-            db_port=int(os.getenv("DB_PORT", "5432")),
-            db_name=os.getenv("DB_NAME", os.getenv("POSTGRES_DB", "support_db")),
-            db_user=os.getenv("DB_USER", os.getenv("POSTGRES_USER", "support")),
-            db_password=os.getenv(
-                "DB_PASSWORD", os.getenv("POSTGRES_PASSWORD", "support_secret")
-            ),
+            db_host=db_host,
+            db_port=db_port,
+            db_name=db_name,
+            db_user=db_user,
+            db_password=db_password,
             db_save_wait_seconds=max(
                 5, min(10, int(os.getenv("DB_SAVE_WAIT_SECONDS", "8")))
             ),

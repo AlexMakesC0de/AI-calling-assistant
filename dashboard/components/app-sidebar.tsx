@@ -1,21 +1,27 @@
-﻿"use client"
+"use client"
 
 import Link from "next/link"
+import Image from "next/image"
 import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
   Upload,
   AlertTriangle,
+  BrainCircuit,
   FileText,
   Inbox,
   MessageCircle,
+  Phone,
   Search,
   Settings,
+  ShieldCheck,
+  PanelLeft,
 } from "lucide-react"
 
 import {
   Sidebar,
   SidebarContent,
+  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -24,20 +30,42 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  SidebarSeparator,
+  useSidebar,
 } from "@/components/ui/sidebar"
+import type { SessionPayload } from "@/lib/auth"
 
-const navItems = [
+const workspaceItems = [
   { href: "/", label: "Overview", icon: LayoutDashboard, match: (p: string) => p === "/" },
-  { href: "/upload", label: "Upload", icon: Upload, match: (p: string) => p.startsWith("/upload") },
   { href: "/incidents", label: "Incidents", icon: AlertTriangle, match: (p: string) => p.startsWith("/incidents") },
-  { href: "/generate-word", label: "Generate Word", icon: FileText, match: (p: string) => p.startsWith("/generate-word") },
+  { href: "/generate-word", label: "Issue History", icon: FileText, match: (p: string) => p.startsWith("/generate-word") },
+  { href: "/analysis", label: "Analysis", icon: BrainCircuit, match: (p: string) => p.startsWith("/analysis") },
+]
+
+const ingestItems = [
+  { href: "/upload", label: "Upload", icon: Upload, match: (p: string) => p.startsWith("/upload") },
   { href: "/inbox", label: "Inbox", icon: Inbox, match: (p: string) => p.startsWith("/inbox") },
   { href: "/whatsapp", label: "WhatsApp", icon: MessageCircle, match: (p: string) => p.startsWith("/whatsapp") },
+  { href: "/calls", label: "Calls", icon: Phone, match: (p: string) => p.startsWith("/calls") },
+]
+
+const utilityItems = [
   { href: "/search", label: "Search", icon: Search, match: (p: string) => p.startsWith("/search") },
   { href: "/system", label: "System", icon: Settings, match: (p: string) => p.startsWith("/system") },
 ]
 
-export function AppSidebar() {
+function CollapseToggle() {
+  const { toggleSidebar } = useSidebar()
+
+  return (
+    <SidebarMenuButton tooltip="Toggle sidebar" onClick={toggleSidebar}>
+      <PanelLeft />
+      <span>Collapse</span>
+    </SidebarMenuButton>
+  )
+}
+
+export function AppSidebar({ session }: { session: SessionPayload }) {
   const pathname = usePathname()
 
   return (
@@ -45,49 +73,117 @@ export function AppSidebar() {
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild>
-              <Link href="/">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                {/*<img*/}
-                {/*  src="/repak_icon.svg"*/}
-                {/*  alt=""*/}
-                {/*  width={20}*/}
-                {/*  height={24}*/}
-                {/*  className="h-5 w-auto shrink-0"*/}
-                {/*/>*/}
-                {/*<span className="font-semibold tracking-tight">Repak</span>*/}
+            <SidebarMenuButton size="lg" asChild tooltip="REPAK">
+              <Link href="/" className="gap-3">
+                <div className="flex size-8 shrink-0 items-center justify-center">
+                  <Image
+                    src="/repak_icon.svg"
+                    alt="Repak"
+                    width={24}
+                    height={28}
+                    className="size-6"
+                  />
+                </div>
+                <div className="flex flex-col gap-0.5 leading-none">
+                  <span className="text-sm font-bold tracking-tight">REPAK</span>
+                  <span className="text-[10px] text-muted-foreground">Support Pipeline</span>
+                </div>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarHeader>
+
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
+          <SidebarGroupLabel>Workspace</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {navItems.map((item) => {
-                const active = item.match(pathname)
-                return (
-                  <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton
-                      asChild
-                      isActive={active}
-                      tooltip={item.label}
-                    >
-                      <Link href={item.href}>
-                        <item.icon />
-                        <span>{item.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                )
-              })}
+              {workspaceItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={item.match(pathname)}
+                    tooltip={item.label}
+                  >
+                    <Link href={item.href}>
+                      <item.icon />
+                      <span>{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Ingest</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {ingestItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={item.match(pathname)}
+                    tooltip={item.label}
+                  >
+                    <Link href={item.href}>
+                      <item.icon />
+                      <span>{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarSeparator />
+
+        <SidebarGroup>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {utilityItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={item.match(pathname)}
+                    tooltip={item.label}
+                  >
+                    <Link href={item.href}>
+                      <item.icon />
+                      <span>{item.label}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+              {session.role === "super_admin" && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname.startsWith("/admin")}
+                    tooltip="Accounts"
+                  >
+                    <Link href="/admin">
+                      <ShieldCheck />
+                      <span>Accounts</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarRail />
+
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <CollapseToggle />
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
     </Sidebar>
   )
 }

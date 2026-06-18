@@ -1,4 +1,5 @@
 import logging
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
@@ -8,9 +9,11 @@ from typing import Any
 from flask import Flask, jsonify, render_template, request
 from werkzeug.utils import secure_filename
 
+from classifier import classify_inbound, should_create_case
 from clients import PipelineClients
 from config import AppConfig
 from email_builder import EmailBodyBuilder
+from email_utils import build_email_transcript, strip_html
 from repository import PostgresRepository
 from validation import UploadValidator
 
@@ -253,6 +256,149 @@ class VoiceRecordingApp:
             )
             return jsonify(result), 200
 
+        @self.app.route("/ingest/email", methods=["POST"])
+        def ingest_email():
+            """Accept email text, classify, format, and store — skip transcription (ISR-243)."""
+            payload = request.get_json(silent=True)
+            if not payload:
+                return jsonify({"error": "Request body must be valid JSON."}), 400
+
+            subject = str(payload.get("subject") or "").strip()
+            sender = str(payload.get("sender") or "").strip()
+            raw_body = str(payload.get("body") or "")
+            message_id = str(payload.get("message_id") or "").strip()
+            received_at = payload.get("received_at")
+
+            if not raw_body.strip() and not subject:
+                return jsonify({"error": "Email body or subject is required."}), 400
+
+            body_text = strip_html(raw_body)
+            transcript_text = build_email_transcript(subject, sender, body_text)
+
+            result: dict[str, Any] = {
+                "message_id": message_id or None,
+                "pipeline": {},
+            }
+
+            logger.info("Step 1: Classifying email message_id=%s", message_id or "unknown")
+            classification = classify_inbound(transcript_text)
+            result["pipeline"]["classification"] = {
+                "status": "completed",
+                **classification,
+            }
+
+            if not should_create_case(classification):
+                logger.info(
+                    "Skipping case creation label=%s confidence=%.2f",
+                    classification.get("label"),
+                    classification.get("confidence", 0),
+                )
+                result["pipeline"]["note"] = "Email classified as non-case; pipeline stopped."
+                return jsonify(result), 200
+
+            email_metadata: dict[str, Any] = {
+                "source_channel": "outlook",
+                "sender": sender,
+                "subject": subject,
+                "message_id": message_id,
+                "received_at": received_at,
+                "contact_info": sender,
+                "classification_label": classification.get("label"),
+                "classification_confidence": classification.get("confidence"),
+                "classification_reason": classification.get("reason"),
+            }
+            if classification.get("label") == "unclear":
+                email_metadata["classification_review_needed"] = True
+
+            logger.info("Step 2: Sending email text to AI formatter (no transcription)...")
+            try:
+                completed_form = self._clients.call_formatter(
+                    transcript_text, metadata=email_metadata
+                )
+                result["pipeline"]["incident_form"] = {
+                    "status": "completed",
+                    "form_id": completed_form.get("form_id"),
+                    "confidence": completed_form.get("confidence"),
+                    "form": completed_form,
+                }
+            except Exception as exc:
+                logger.error("Form generation failed after retries: %s", exc)
+                result["pipeline"]["incident_form"] = {
+                    "status": "failed",
+                    "error": str(exc),
+                }
+                return jsonify(result), 502
+
+            safe_id = re.sub(r"[^A-Za-z0-9._-]+", "_", message_id or "email")[:80]
+            filename = f"email-{safe_id}.txt"
+            filepath = self._config.upload_dir / filename
+            filepath.write_text(transcript_text, encoding="utf-8")
+
+            form = completed_form
+            email_body = EmailBodyBuilder.build(form)
+            email_payload = {
+                "to": self._config.support_email,
+                "subject": (
+                    f"Incident Form Completed - {form.get('form_id', 'N/A')} "
+                    f"[{form.get('issue', {}).get('category', 'General')}]"
+                ),
+                "body": email_body,
+                "report": form,
+            }
+
+            email_future = self._executor.submit(self._clients.send_email, email_payload)
+            db_future = self._executor.submit(
+                self._db.store_upload_with_form,
+                form=completed_form,
+                audio_filename=filename,
+                audio_path=str(filepath),
+                transcript_text=transcript_text,
+                completed_at=completed_form.get("completed_at"),
+                source_lang="email",
+            )
+
+            try:
+                storage_result = db_future.result(timeout=self._config.db_save_wait_seconds)
+                if storage_result:
+                    result["pipeline"]["database"] = {
+                        "status": "stored",
+                        "incident_form": "stored",
+                        "storage_projection": "stored",
+                        **storage_result,
+                    }
+                else:
+                    result["pipeline"]["database"] = {
+                        "status": "failed",
+                        "incident_form": "failed",
+                        "storage_projection": "failed",
+                    }
+            except FutureTimeoutError:
+                result["pipeline"]["database"] = {
+                    "status": "processing",
+                    "incident_form": "processing",
+                    "storage_projection": "processing",
+                    "note": "Database save continues in background.",
+                }
+            except Exception as exc:
+                logger.error("Database save failed: %s", exc)
+                result["pipeline"]["database"] = {
+                    "status": "failed",
+                    "error": str(exc),
+                }
+
+            try:
+                email_future.result(timeout=45)
+                result["pipeline"]["email"] = {
+                    "status": "sent",
+                    "sent_to": self._config.support_email,
+                }
+            except Exception as exc:
+                logger.error("Email failed after retries: %s", exc)
+                result["pipeline"]["email"] = {"status": "failed", "error": str(exc)}
+
+            result["pipeline"]["transcription"] = {"status": "skipped", "reason": "email_ingest"}
+            return jsonify(result), 200
+
         @self.app.route("/forms", methods=["GET"])
         def list_forms():
             limit = min(int(request.args.get("limit", 50)), 500)
@@ -282,3 +428,40 @@ class VoiceRecordingApp:
                     jsonify({"error": "Database unavailable.", "details": str(exc)}),
                     503,
                 )
+
+        @self.app.route("/email-notifications", methods=["GET"])
+        def get_email_notifications():
+            """Proxy to email-monitor service to get notifications."""
+            try:
+                import requests
+                email_monitor_url = "http://email-monitor:5003/notifications"
+                response = requests.get(email_monitor_url, timeout=5)
+                response.raise_for_status()
+                return jsonify(response.json()), 200
+            except requests.exceptions.ConnectionError:
+                logger.warning("Email monitor service not available")
+                return jsonify({"notifications": []}), 200
+            except Exception as exc:
+                logger.error("Failed to get email notifications: %s", exc)
+                return jsonify({"notifications": []}), 200
+
+        @self.app.route("/email-notifications/clear", methods=["POST"])
+        def clear_email_notifications():
+            """Proxy to email-monitor service to clear notifications."""
+            try:
+                import requests
+                email_monitor_url = "http://email-monitor:5003/notifications/clear"
+                response = requests.post(email_monitor_url, timeout=5)
+                response.raise_for_status()
+                return jsonify(response.json()), 200
+            except requests.exceptions.ConnectionError:
+                logger.warning("Email monitor service not available")
+                return jsonify({"status": "cleared"}), 200
+            except Exception as exc:
+                logger.error("Failed to clear email notifications: %s", exc)
+                return jsonify({"status": "cleared"}), 200
+
+        @self.app.route("/emails", methods=["GET"])
+        def emails_dashboard():
+            """Serve the email notifications dashboard page."""
+            return render_template("emails.html")

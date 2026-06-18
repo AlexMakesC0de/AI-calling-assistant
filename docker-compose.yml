@@ -147,12 +147,18 @@ services:
       PROFANITY_FILTER: "${PROFANITY_FILTER:-true}"
       PROFANITY_CENSOR_CHAR: "${PROFANITY_CENSOR_CHAR:-*}"
 
+      DATABASE_URL: ${VOICE_APP_DATABASE_URL:-}
       DB_HOST: ${DB_HOST:-database}
       DB_PORT: ${DB_PORT:-5432}
       DB_NAME: ${POSTGRES_DB:-support_db}
       DB_USER: ${POSTGRES_USER:-support}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-support_secret}
       DB_SAVE_WAIT_SECONDS: ${DB_SAVE_WAIT_SECONDS:-8}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      OLLAMA_CONNECT_TIMEOUT: ${OLLAMA_CONNECT_TIMEOUT:-3}
+      OLLAMA_READ_TIMEOUT: ${OLLAMA_READ_TIMEOUT:-120}
+      CLASSIFIER_UNCLEAR_THRESHOLD: ${CLASSIFIER_UNCLEAR_THRESHOLD:-0.55}
     volumes:
       - ./local-storage/shared:/data/shared
     healthcheck:
@@ -166,6 +172,8 @@ services:
       transcript-formatter:
         condition: service_healthy
       email-sender:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
 
   # -----------------------------------------------------------------------
@@ -243,6 +251,48 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:5011/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+
+  # -----------------------------------------------------------------------
+  # 4b. Call Ingest – Twilio Voice call recording handler.
+  #     Receives inbound voice calls, records them via TwiML, downloads
+  #     the MP3 recording, and forwards to the voice-app /upload pipeline.
+  # -----------------------------------------------------------------------
+  call-ingest:
+    restart: unless-stopped
+    build:
+      context: ./call-ingest
+      dockerfile: Dockerfile
+    container_name: support-call-ingest
+    networks:
+      - app-network
+    ports:
+      - "5012:5012"
+    environment:
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_VALIDATE_SIGNATURE: ${TWILIO_VALIDATE_SIGNATURE:-true}
+      CALL_PUBLIC_BASE_URL: ${CALL_PUBLIC_BASE_URL:-}
+      CALL_GREETING_TEXT: ${CALL_GREETING_TEXT:-Thank you for calling support. Please describe your issue after the tone.}
+      CALL_MAX_RECORDING_SECONDS: ${CALL_MAX_RECORDING_SECONDS:-300}
+      VOICE_APP_UPLOAD_URL: ${VOICE_APP_UPLOAD_URL:-http://voice-app:5000/upload}
+      VOICE_APP_FORWARD_TIMEOUT: ${VOICE_APP_FORWARD_TIMEOUT:-900}
+      MEDIA_DOWNLOAD_TIMEOUT: ${MEDIA_DOWNLOAD_TIMEOUT:-120}
+      CALL_RECORDINGS_DIR: /data/shared/call-recordings
+      CALL_EVENTS_DIR: /data/shared/call-events
+      CALL_TMP_DIR: /tmp/calls
+      DATABASE_URL: postgresql://${POSTGRES_USER:-support}:${POSTGRES_PASSWORD:-support_secret}@database:5432/${POSTGRES_DB:-support_db}
+    volumes:
+      - .\local-storage\shared:/data/shared
+    depends_on:
+      voice-app:
+        condition: service_healthy
+      database:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5012/health || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -385,7 +435,12 @@ services:
       OUTLOOK_CLIENT_SECRET: ${OUTLOOK_CLIENT_SECRET:-}
       OUTLOOK_MAILBOX: ${OUTLOOK_MAILBOX:-}
       OUTLOOK_FOLDER: ${OUTLOOK_FOLDER:-Inbox}
+      EMAIL_ATTACHMENTS_DIR: /data/shared/email-attachments
+      WHATSAPP_MEDIA_DIR: /data/shared/whatsapp-media
+      OUTLOOK_ATTACHMENTS_DIR: /data/shared/outlook-attachments
       NODE_ENV: production
+    volumes:
+      - ./local-storage/shared:/data/shared
     ports:
       - "3000:3000"
     depends_on:
@@ -401,7 +456,46 @@ services:
       start_period: 30s
 
   # -----------------------------------------------------------------------
-  # 9. Mailpit – local SMTP catch-all with web UI (dev/test only)
+  # 9. Email Monitor – monitors Outlook inbox and classifies emails
+  #    Sends real-time notifications to dashboard
+  # -----------------------------------------------------------------------
+  email-monitor:
+    <<: *common
+    build:
+      context: ./email-monitor
+      dockerfile: Dockerfile
+    container_name: support-email-monitor
+    env_file:
+      - .env
+    environment:
+      OUTLOOK_EMAIL: ${OUTLOOK_EMAIL:-fjodor.smorodins@student.nhlstenden.com}
+      OUTLOOK_PASSWORD: ${OUTLOOK_PASSWORD:-changeme}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b}
+      OLLAMA_CONNECT_TIMEOUT: ${OLLAMA_CONNECT_TIMEOUT:-3}
+      OLLAMA_READ_TIMEOUT: ${OLLAMA_READ_TIMEOUT:-120}
+      VOICE_APP_URL: ${VOICE_APP_URL:-http://voice-app:5000}
+      PROCESSED_EMAILS_STORE: /storage/processed_message_ids.json
+      SUPPORT_INBOX_ADDRESSES: ${SUPPORT_INBOX_ADDRESSES:-}
+      GRAPH_MAILBOX: ${GRAPH_MAILBOX:-}
+    ports:
+      - "5003:5003"
+    volumes:
+      - ./attachments:/storage/uploads
+      - ./local-storage/email-monitor:/storage
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5003/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      ollama:
+        condition: service_healthy
+      voice-app:
+        condition: service_healthy
+
+  # -----------------------------------------------------------------------
+  # 10. Mailpit – local SMTP catch-all with web UI (dev/test only)
   # -----------------------------------------------------------------------
   mailpit:
     <<: *common

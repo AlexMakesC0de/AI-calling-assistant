@@ -1,22 +1,25 @@
-# Load environment from .env file in this directory
-$envFile = Join-Path $PSScriptRoot ".env"
+# Load secrets from the dashboard .env file — never hardcode credentials here.
+$envFile = Join-Path $PSScriptRoot "..\dashboard\.env"
 if (Test-Path $envFile) {
     Get-Content $envFile | ForEach-Object {
-        if ($_ -match '^\s*([^#][^=]+?)\s*=\s*"?(.+?)"?\s*$') {
-            [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], "Process")
+        if ($_ -match '^\s*([A-Z_]+)\s*=\s*"?(.+?)"?\s*$' -and $_ -notmatch '^\s*#') {
+            [System.Environment]::SetEnvironmentVariable($Matches[1], $Matches[2], "Process")
         }
     }
-} else {
-    Write-Error "Missing .env file — copy .env.example to .env and fill in your credentials."
-    exit 1
 }
 
+$env:TWILIO_VALIDATE_SIGNATURE = "false"
+$env:WHATSAPP_PUBLIC_BASE_URL = ""
+$env:WHATSAPP_SILENT_REPLY = "false"
+$env:WHATSAPP_AUTO_ACK_TEXT = "Got it — processing your message."
+$env:WHATSAPP_AUTO_ACK_VOICE = "Got your voice note — transcribing now."
+$env:VOICE_APP_UPLOAD_URL = "http://localhost:5000/upload"
 $env:WHATSAPP_EVENTS_DIR = "$PSScriptRoot\local-data\events"
 $env:WHATSAPP_MEDIA_DIR = "$PSScriptRoot\local-data\media"
 $env:WHATSAPP_TMP_DIR = "$PSScriptRoot\local-data\tmp"
 
 Write-Host "Starting whatsapp-ingest on http://localhost:5011"
-Write-Host "Twilio signature validation: $($env:TWILIO_VALIDATE_SIGNATURE)"
+Write-Host "Twilio signature validation: DISABLED (local dev)"
 Write-Host ""
 
 python "$PSScriptRoot\app.py"

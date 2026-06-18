@@ -19,6 +19,8 @@ model Account {
   accountId     Int             @id @default(autoincrement()) @map("account_id")
   password      String          @db.VarChar(255)
   accountEmail  String          @unique(map: "account_account_email_key") @map("account_email") @db.VarChar(255)
+  role          String          @default("user") @db.VarChar(20)
+  name          String?         @db.VarChar(255)
   sessions      RecordSession[]
 
   @@map("account")
@@ -78,6 +80,7 @@ model IncidentForm {
   generalInformation  IncidentGeneralInformation?
   transcriptions      IncidentTranscription[]
   whatsappMessages    WhatsAppMessage[]
+  twilioCalls         TwilioCall[]
 
   @@index([fileId], map: "idx_incident_form_file_id")
   @@map("incident_form")
@@ -110,8 +113,46 @@ model IncidentTranscription {
   @@map("incident_transcription")
 }
 
-// twilio_call table is intentionally NOT modeled — the table still exists in
-// the DB for rollback safety, but the dashboard no longer reads or writes it.
+model CallConversation {
+  id            Int          @id @default(autoincrement())
+  contactPhone  String       @unique @map("contact_phone") @db.VarChar(30)
+  contactName   String?      @map("contact_name") @db.VarChar(255)
+  lastCallAt    DateTime     @default(now()) @map("last_call_at") @db.Timestamptz(6)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  calls         TwilioCall[]
+
+  @@map("call_conversation")
+}
+
+model TwilioCall {
+  id                  Int               @id @default(autoincrement())
+  recordingSessionId  Int?              @unique @map("recordingsession_id")
+  conversationId      Int?              @map("conversation_id")
+  callSid             String            @unique @map("call_sid") @db.VarChar(64)
+  direction           String            @db.VarChar(16)
+  fromNumber          String?           @map("from_number") @db.VarChar(32)
+  toNumber            String?           @map("to_number") @db.VarChar(32)
+  status              String            @db.VarChar(32)
+  durationSeconds     Int?              @map("duration_seconds")
+  recordingSid        String?           @unique @map("recording_sid") @db.VarChar(64)
+  recordingTwilioUrl  String?           @map("recording_twilio_url")
+  recordingFileId     Int?              @map("recording_file_id")
+  incidentFormId      Int?              @map("incident_form_id")
+  transcriptText      String?           @map("transcript_text")
+  localRecordingPath  String?           @map("local_recording_path")
+  errorCode           String?           @map("error_code") @db.VarChar(16)
+  errorMessage        String?           @map("error_message")
+  createdAt           DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime          @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+  conversation        CallConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  incidentForm        IncidentForm?     @relation(fields: [incidentFormId], references: [id], onDelete: SetNull)
+
+  @@index([status], map: "idx_twilio_call_status")
+  @@index([createdAt(sort: Desc)], map: "idx_twilio_call_created_at")
+  @@index([conversationId], map: "idx_twilio_call_conversation")
+  @@index([incidentFormId], map: "idx_twilio_call_incident")
+  @@map("twilio_call")
+}
 
 model WhatsAppConversation {
   id             Int                @id @default(autoincrement())
@@ -158,4 +199,92 @@ model WhatsAppMedia {
 
   @@unique([messageId, mediaIndex], map: "uq_wa_media_msg_index")
   @@map("whatsapp_media")
+}
+
+model EmailConversation {
+  id             Int              @id @default(autoincrement())
+  senderEmail    String           @unique @map("sender_email") @db.VarChar(255)
+  senderName     String?          @map("sender_name") @db.VarChar(255)
+  lastMessageAt  DateTime         @default(now()) @map("last_message_at") @db.Timestamptz(6)
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  messages       EmailMessage[]
+
+  @@map("email_conversation")
+}
+
+model EmailMessage {
+  id                Int                 @id @default(autoincrement())
+  conversationId    Int                 @map("conversation_id")
+  messageIdHeader   String?             @unique @map("message_id_header") @db.VarChar(500)
+  direction         String
+  subject           String?
+  fromEmail         String              @map("from_email") @db.VarChar(255)
+  fromName          String?             @map("from_name") @db.VarChar(255)
+  toEmail           String?             @map("to_email")
+  cc                String?
+  bodyText          String?             @map("body_text")
+  bodyHtml          String?             @map("body_html")
+  headers           Json                @default("{}")
+  envelope          Json                @default("{}")
+  rawPayload        Json                @default("{}") @map("raw_payload")
+  createdAt         DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  conversation      EmailConversation   @relation(fields: [conversationId], references: [id], onDelete: NoAction)
+  attachments       EmailAttachment[]
+
+  @@index([conversationId], map: "idx_email_msg_conversation")
+  @@map("email_message")
+}
+
+model EmailAttachment {
+  id              Int           @id @default(autoincrement())
+  messageId       Int           @map("message_id")
+  attachmentIndex Int           @default(0) @map("attachment_index") @db.SmallInt
+  externalId      String?       @map("external_id") @db.VarChar(500)
+  fileName        String?       @map("file_name") @db.VarChar(500)
+  contentType     String        @default("application/octet-stream") @map("content_type") @db.VarChar(100)
+  localPath       String?       @map("local_path")
+  fileSizeBytes   BigInt?       @map("file_size_bytes")
+  contentId       String?       @map("content_id") @db.VarChar(255)
+  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  message         EmailMessage  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, attachmentIndex], map: "uq_email_att_msg_index")
+  @@map("email_attachment")
+}
+
+model ContentAnalysis {
+  id                       Int       @id @default(autoincrement())
+  sourceType               String    @map("source_type") @db.VarChar(30)
+  sourceId                 String    @map("source_id")
+  accountId                Int       @map("account_id")
+  classificationLabel      String?   @map("classification_label") @db.VarChar(20)
+  classificationConfidence Float?    @map("classification_confidence") @db.Real
+  classificationReason     String?   @map("classification_reason")
+  incidentFormId           Int?      @map("incident_form_id")
+  pipelineStatus           String    @default("pending") @map("pipeline_status") @db.VarChar(30)
+  errorMessage             String?   @map("error_message")
+  contentPreview           String?   @map("content_preview")
+  sender                   String?
+  analyzedAt               DateTime  @default(now()) @map("analyzed_at") @db.Timestamptz(6)
+
+  @@unique([sourceType, sourceId], map: "uq_content_analysis_source")
+  @@index([accountId], map: "idx_content_analysis_account")
+  @@index([incidentFormId], map: "idx_content_analysis_incident")
+  @@map("content_analysis")
+}
+
+model OutlookAttachmentCache {
+  id            Int      @id @default(autoincrement())
+  messageId     String   @map("message_id") @db.VarChar(500)
+  attachmentId  String   @map("attachment_id") @db.VarChar(500)
+  fileName      String?  @map("file_name") @db.VarChar(500)
+  contentType   String   @default("application/octet-stream") @map("content_type") @db.VarChar(100)
+  localPath     String   @map("local_path")
+  fileSizeBytes BigInt?  @map("file_size_bytes")
+  contentId     String?  @map("content_id") @db.VarChar(255)
+  isInline      Boolean  @default(false) @map("is_inline")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([messageId, attachmentId], map: "uq_outlook_att_cache")
+  @@map("outlook_attachment_cache")
 }

@@ -61,3 +61,52 @@ export async function analyzeAudio(
   }
   return parsed as PipelineResult;
 }
+
+export type EmailIngestResult = {
+  message_id: string | null;
+  pipeline: {
+    classification?: { status: string; label?: string; confidence?: number; reason?: string };
+    incident_form?: { status: string; form_id?: string; confidence?: unknown; form?: Record<string, unknown>; error?: string };
+    email?: { status: string; sent_to?: string; error?: string };
+    database?: {
+      status: string;
+      incident_form_id?: number;
+      file_id?: number;
+      note?: string;
+      error?: string;
+    };
+    transcription?: { status: string; reason?: string };
+    note?: string;
+  };
+};
+
+export async function analyzeEmail(email: {
+  subject: string;
+  sender: string;
+  body: string;
+  message_id: string;
+  received_at?: string;
+}): Promise<EmailIngestResult> {
+  const baseUrl = env.voiceAppUploadUrl.replace(/\/upload$/, "");
+  const response = await fetch(`${baseUrl}/ingest/email`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(email),
+    signal: AbortSignal.timeout(360_000),
+  });
+
+  const text = await response.text();
+  let parsed: unknown = null;
+  try { parsed = text ? JSON.parse(text) : null; } catch { /* fall through */ }
+
+  if (!response.ok) {
+    const err = (parsed && typeof parsed === "object" && "error" in parsed)
+      ? (parsed as { error: string }).error
+      : text.slice(0, 400);
+    throw new Error(`voice-app /ingest/email failed (${response.status}): ${err}`);
+  }
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error("voice-app /ingest/email returned non-JSON body");
+  }
+  return parsed as EmailIngestResult;
+}

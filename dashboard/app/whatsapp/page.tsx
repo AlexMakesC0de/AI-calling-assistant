@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { MessageCircle } from "lucide-react";
 import { listConversations } from "@/lib/whatsapp";
-import { formatDateTime } from "@/lib/utils";
 import { cn } from "@/lib/utils";
+import { TimeAgo } from "@/components/time-ago";
+import { EmptyState } from "@/components/empty-state";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "WhatsApp" };
@@ -21,9 +23,11 @@ export default async function WhatsAppPage() {
       </div>
 
       {conversations.length === 0 ? (
-        <div className="rounded-md border border-border p-12 text-center text-sm text-muted-foreground">
-          No conversations yet. Configure the Twilio WhatsApp sandbox and send a message to get started.
-        </div>
+        <EmptyState
+          icon={MessageCircle}
+          title="No conversations yet."
+          description="Configure the Twilio WhatsApp sandbox and send a message to get started."
+        />
       ) : (
         <div className="rounded-md border border-border">
           <Table>
@@ -46,7 +50,7 @@ export default async function WhatsAppPage() {
                       )}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-sm">{formatDateTime(conv.lastMessageAt)}</TableCell>
+                  <TableCell className="text-sm"><TimeAgo date={conv.lastMessageAt} /></TableCell>
                   <TableCell className="max-w-[360px]">
                     <div className="flex items-center gap-2 truncate">
                       {conv.lastDirection && (

@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { readFileSync } from "fs";
 import { join } from "path";
 import PizZip from "pizzip";

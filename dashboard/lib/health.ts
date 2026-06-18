@@ -74,6 +74,7 @@ export async function runHealthChecks(): Promise<ServiceCheck[]> {
     check("email", "Email sender (SMTP)", () => pingHttp(env.serviceHealth.email)),
     check("mailpit", "Mailpit", () => pingHttp(env.serviceHealth.mailpit)),
     check("telephony", "Telephony ingest", () => pingHttp(env.serviceHealth.telephony)),
+    check("call-ingest", "Call ingest (Twilio Voice)", () => pingHttp(env.serviceHealth.callIngest)),
     check("ollama", "Ollama", () => pingHttp(env.serviceHealth.ollama)),
   ];
   return Promise.all(checks);

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { mkdir, writeFile } from "fs/promises";
+import { join } from "path";
 import { prisma } from "@/lib/prisma";
+import { env } from "@/lib/env";
+import { serveFromDisk, guessExtension } from "@/lib/media-storage";
 
 export async function GET(
   _req: NextRequest,
@@ -11,6 +15,11 @@ export async function GET(
   });
   if (!media) return NextResponse.json({ error: "not found" }, { status: 404 });
 
+  if (media.localPath) {
+    const diskResponse = await serveFromDisk(media.localPath, media.contentType);
+    if (diskResponse) return diskResponse;
+  }
+
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   if (!sid || !token) {
@@ -18,9 +27,6 @@ export async function GET(
   }
 
   const auth = "Basic " + Buffer.from(`${sid}:${token}`).toString("base64");
-
-  // Twilio media URLs redirect to a CDN. Follow manually so the auth
-  // header isn't stripped on the cross-origin redirect.
   const initial = await fetch(media.twilioUrl, {
     headers: { Authorization: auth },
     redirect: "manual",
@@ -42,6 +48,25 @@ export async function GET(
   }
 
   const body = await res.arrayBuffer();
+
+  // Lazy backfill: save to disk for future requests
+  if (!media.localPath) {
+    try {
+      const ext = guessExtension(media.contentType);
+      const filename = `${media.messageId}_${media.mediaIndex}${ext}`;
+      await mkdir(env.whatsappMediaDir, { recursive: true });
+      const localPath = join(env.whatsappMediaDir, filename);
+      const buffer = Buffer.from(body);
+      await writeFile(localPath, buffer);
+      await prisma.whatsAppMedia.update({
+        where: { id: media.id },
+        data: { localPath, fileSizeBytes: buffer.length },
+      });
+    } catch (err) {
+      console.error("Failed to backfill WhatsApp media to disk:", err);
+    }
+  }
+
   return new NextResponse(body, {
     headers: {
       "Content-Type": media.contentType,
