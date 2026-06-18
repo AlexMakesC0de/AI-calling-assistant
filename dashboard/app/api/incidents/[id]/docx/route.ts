@@ -1,10 +1,70 @@
 import { NextResponse } from "next/server";
-import { Document, HeadingLevel, Packer, Paragraph, TextRun } from "docx";
+import { readFileSync } from "fs";
+import { join } from "path";
+import PizZip from "pizzip";
+import Docxtemplater from "docxtemplater";
 import { prisma } from "@/lib/prisma";
 import { asFormData, stepsToList } from "@/lib/incident-form";
+import type { IncidentFormData } from "@/lib/incident-form";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function flattenFormData(data: IncidentFormData): Record<string, string> {
+  const flat: Record<string, string> = {};
+
+  flat["call_summary"] = data.call_summary ?? "";
+  flat["customer_sentiment"] = data.customer_sentiment ?? "";
+
+  flat["caller_information.name"] = data.caller_information?.name ?? "";
+  flat["caller_information.account_or_reference"] = data.caller_information?.account_or_reference ?? "";
+  flat["caller_information.contact_info"] = data.caller_information?.contact_info ?? "";
+
+  flat["call_details.date"] = data.call_details?.date ?? "";
+  flat["call_details.duration_estimate"] = data.call_details?.duration_estimate ?? "";
+  flat["call_details.agent_name"] = data.call_details?.agent_name ?? "";
+
+  flat["issue.category"] = data.issue?.category ?? "";
+  flat["issue.priority"] = data.issue?.priority ?? "";
+  flat["issue.description"] = data.issue?.description ?? "";
+  flat["issue.error_messages"] = data.issue?.error_messages ?? "";
+
+  flat["resolution.status"] = data.resolution?.status ?? "";
+  flat["resolution.steps_taken"] = stepsToList(data.resolution?.steps_taken).join("; ");
+  flat["resolution.outcome"] = data.resolution?.outcome ?? "";
+
+  flat["follow_up.required"] = data.follow_up?.required ? "Yes" : "No";
+  flat["follow_up.actions"] = stepsToList(data.follow_up?.actions).join("; ");
+  flat["follow_up.department"] = data.follow_up?.department ?? "";
+
+  flat["transcript.full_text"] = data.transcript?.full_text ?? "";
+  flat["transcript.word_count"] = data.transcript?.word_count?.toString() ?? "";
+
+  return flat;
+}
+
+function resolveTemplatePath(): string {
+  const candidates = [
+    join(process.cwd(), "templates", "incident_form_template_with_tokens.docx"),
+    join(process.cwd(), "..", "templates", "incident_form_template_with_tokens.docx"),
+  ];
+  if (process.env.TEMPLATE_DIR) {
+    candidates.unshift(
+      join(process.env.TEMPLATE_DIR, "incident_form_template_with_tokens.docx"),
+    );
+  }
+  for (const p of candidates) {
+    try {
+      readFileSync(p);
+      return p;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error(
+    `Template not found. Searched: ${candidates.join(", ")}`,
+  );
+}
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -22,101 +82,43 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   const data = asFormData(incident.generalInformation?.formData);
   const original = incident.transcriptions.find((t) => t.langCode !== "nl");
-  const dutch = incident.transcriptions.find((t) => t.langCode === "nl");
 
-  const heading = (text: string, level: typeof HeadingLevel[keyof typeof HeadingLevel] = HeadingLevel.HEADING_2) =>
-    new Paragraph({ text, heading: level, spacing: { before: 240, after: 120 } });
-
-  const kv = (label: string, value: string | undefined | null) =>
-    new Paragraph({
-      children: [
-        new TextRun({ text: `${label}: `, bold: true }),
-        new TextRun({ text: value && value.trim() ? value : "—" }),
-      ],
-      spacing: { after: 60 },
-    });
-
-  const bullet = (text: string) =>
-    new Paragraph({ text, bullet: { level: 0 }, spacing: { after: 40 } });
-
-  const subtitle = `${incident.category ?? "Uncategorized"}${
-    incident.priority ? ` · ${incident.priority}` : ""
-  }${data.form_id ? ` · ${data.form_id}` : ""}`;
-
-  const children: Paragraph[] = [
-    new Paragraph({
-      text: `Incident #${incident.id}`,
-      heading: HeadingLevel.TITLE,
-    }),
-    new Paragraph({
-      children: [new TextRun({ text: subtitle, color: "666666" })],
-      spacing: { after: 240 },
-    }),
-
-    heading("Overview"),
-    kv("Completed", incident.completedAt.toISOString()),
-    kv("Status", incident.status),
-    kv("Caller", incident.generalInformation?.callerName),
-    kv("Agent", incident.generalInformation?.agentName),
-    kv("Audio file", incident.generalInformation?.audioFilename),
-    kv(
-      "Sentiment",
-      original?.sentiment ?? data.customer_sentiment ?? null
-    ),
-
-    heading("Caller information"),
-    kv("Name", data.caller_information?.name),
-    kv("Account / reference", data.caller_information?.account_or_reference),
-    kv("Contact", data.caller_information?.contact_info),
-
-    heading("Issue"),
-    kv("Category", data.issue?.category),
-    kv("Priority", data.issue?.priority),
-    kv("Description", data.issue?.description),
-    kv("Errors", data.issue?.error_messages),
-
-    heading("Resolution"),
-    kv("Status", data.resolution?.status),
-    kv("Outcome", data.resolution?.outcome),
-  ];
-
-  const steps = stepsToList(data.resolution?.steps_taken);
-  if (steps.length > 0) {
-    children.push(new Paragraph({ children: [new TextRun({ text: "Steps taken:", bold: true })] }));
-    for (const step of steps) children.push(bullet(step));
+  if (!data.customer_sentiment && original?.sentiment) {
+    data.customer_sentiment = original.sentiment;
+  }
+  if (!data.call_summary && original?.summary) {
+    data.call_summary = original.summary;
+  }
+  if (!data.transcript?.full_text && original?.transcriptText) {
+    data.transcript = {
+      ...data.transcript,
+      full_text: original.transcriptText,
+      word_count: data.transcript?.word_count ?? original.transcriptText.split(/\s+/).length,
+    };
   }
 
-  children.push(heading("Follow-up"));
-  children.push(kv("Required", data.follow_up?.required ? "Yes" : "No"));
-  children.push(kv("Department", data.follow_up?.department));
-  const actions = stepsToList(data.follow_up?.actions);
-  if (actions.length > 0) {
-    children.push(new Paragraph({ children: [new TextRun({ text: "Actions:", bold: true })] }));
-    for (const action of actions) children.push(bullet(action));
+  let templatePath: string;
+  try {
+    templatePath = resolveTemplatePath();
+  } catch (e) {
+    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
   }
 
-  children.push(heading("Summary"));
-  children.push(
-    new Paragraph({ text: data.call_summary || original?.summary || "No summary recorded.", spacing: { after: 120 } })
-  );
-  if (dutch?.summary) {
-    children.push(new Paragraph({ children: [new TextRun({ text: "Nederlands:", bold: true })] }));
-    children.push(new Paragraph({ text: dutch.summary, spacing: { after: 120 } }));
-  }
+  const templateBuf = readFileSync(templatePath);
+  const zip = new PizZip(templateBuf);
+  const doc = new Docxtemplater(zip, {
+    paragraphLoop: false,
+    linebreaks: true,
+    delimiters: { start: "{", end: "}" },
+  });
 
-  if (original?.transcriptText) {
-    children.push(heading("Transcript"));
-    for (const line of original.transcriptText.split(/\n+/)) {
-      if (line.trim()) children.push(new Paragraph({ text: line, spacing: { after: 40 } }));
-    }
-  }
+  const flat = flattenFormData(data);
+  doc.render(flat);
 
-  const doc = new Document({ sections: [{ children }] });
-  const buffer = await Packer.toBuffer(doc);
-  // Wrap in a fresh Uint8Array so the response body type matches BodyInit.
-  const body = new Uint8Array(buffer);
+  const buf = doc.getZip().generate({ type: "nodebuffer" });
+  const body = new Uint8Array(buf);
 
-  const filename = `incident-${incident.id}${data.form_id ? `-${data.form_id}` : ""}.docx`;
+  const filename = `incident-${incident.id}.docx`;
   return new NextResponse(body, {
     status: 200,
     headers: {

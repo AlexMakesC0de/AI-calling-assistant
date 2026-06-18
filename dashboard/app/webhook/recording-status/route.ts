@@ -132,7 +132,7 @@ export async function POST(req: NextRequest) {
       const fd = new FormData();
       fd.append(
         "file",
-        new Blob([mp3Buffer], { type: "audio/mpeg" }),
+        new Blob([new Uint8Array(mp3Buffer)], { type: "audio/mpeg" }),
         localPath.split(/[\\/]/).pop() ?? "call.mp3",
       );
       fd.append("contact_info", fromNumber);

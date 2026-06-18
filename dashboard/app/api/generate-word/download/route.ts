@@ -12,8 +12,6 @@ export const dynamic = "force-dynamic";
 function flattenFormData(data: IncidentFormData): Record<string, string> {
   const flat: Record<string, string> = {};
 
-  flat["form_id"] = data.form_id ?? "";
-  flat["completed_at"] = data.completed_at ?? "";
   flat["call_summary"] = data.call_summary ?? "";
   flat["customer_sentiment"] = data.customer_sentiment ?? "";
 
@@ -93,7 +91,7 @@ export async function POST(request: Request) {
 
   const buf = doc.getZip().generate({ type: "nodebuffer" });
   const body = new Uint8Array(buf);
-  const filename = `incident-${formData.form_id ?? "report"}.docx`;
+  const filename = "incident-report.docx";
 
   return new NextResponse(body, {
     status: 200,
