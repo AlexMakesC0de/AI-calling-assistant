@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Phone, MessageCircle, Mail } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -41,6 +41,7 @@ function PriorityBadge({ priority }: { priority: string | null }) {
 }
 
 export function IncidentsTable({ incidents }: { incidents: IncidentRow[] }) {
+  const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isPending, startTransition] = useTransition();
 
@@ -121,8 +122,12 @@ export function IncidentsTable({ incidents }: { incidents: IncidentRow[] }) {
           </TableHeader>
           <TableBody>
             {incidents.map((inc) => (
-              <TableRow key={inc.id} className={selectedIds.has(inc.id) ? "bg-muted/20" : ""}>
-                <TableCell>
+              <TableRow
+                key={inc.id}
+                className={cn("cursor-pointer", selectedIds.has(inc.id) && "bg-muted/20")}
+                onClick={() => router.push(`/incidents/${inc.id}`)}
+              >
+                <TableCell onClick={(e) => e.stopPropagation()}>
                   <input
                     type="checkbox"
                     checked={selectedIds.has(inc.id)}
@@ -135,9 +140,7 @@ export function IncidentsTable({ incidents }: { incidents: IncidentRow[] }) {
                   <SourceIcon sourceType={inc.sourceType} />
                 </TableCell>
                 <TableCell>
-                  <Link href={`/incidents/${inc.id}`} className="hover:underline">
-                    <TimeAgo date={inc.completedAt} />
-                  </Link>
+                  <TimeAgo date={inc.completedAt} />
                 </TableCell>
                 <TableCell>{inc.callerName}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{inc.category}</TableCell>
