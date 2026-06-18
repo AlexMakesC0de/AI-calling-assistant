@@ -3,6 +3,8 @@ API routes for the Transcript Formatter service.
 """
 
 import logging
+import time
+from datetime import datetime, timezone
 from flask import jsonify, request
 from marshmallow.exceptions import ValidationError
 
@@ -60,9 +62,16 @@ def register_routes(app, schema, form_builder):
             logger.warning("Validation error: %s", err.messages)
             return jsonify({"error": "Validation failed.", "details": err.messages}), 422
 
+        t0 = time.monotonic()
         form = build_incident_form(data)
-        logger.info("Completed incident form %s (confidence: %s)",
-                    form["form_id"], form["confidence"]["overall"])
+        elapsed = time.monotonic() - t0
+        logger.info(
+            "Form %s complete at %s — took %.1fs (confidence: %s)",
+            form["form_id"],
+            datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
+            elapsed,
+            form["confidence"]["overall"],
+        )
         response = jsonify(form)
         response.headers['Content-Language'] = 'en'
         return response, 200

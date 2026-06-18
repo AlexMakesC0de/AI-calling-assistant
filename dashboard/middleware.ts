@@ -3,7 +3,8 @@ import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
 function getSecret() {
-  const raw = process.env.AUTH_SECRET ?? "dev-secret-change-me-in-production";
+  const raw = process.env.AUTH_SECRET;
+  if (!raw) throw new Error("AUTH_SECRET env var is required");
   return new TextEncoder().encode(raw);
 }
 

@@ -12,6 +12,7 @@ It also rates its confidence for each field it fills.
 
 import logging
 import os
+import threading
 
 from flask import Flask
 
@@ -20,6 +21,7 @@ from config import *  # noqa: F401, F403
 from schemas import format_request_schema
 from forms import build_incident_form
 from routes import register_routes
+from ollama_client import _resolve_ollama_model
 
 # ---------------------------------------------------------------------------
 # Flask Application Setup
@@ -42,6 +44,26 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 register_routes(app, format_request_schema, build_incident_form)
+
+
+def _warmup_ollama():
+    try:
+        import requests
+        from config import OLLAMA_URL, OLLAMA_CONNECT_TIMEOUT
+        model = _resolve_ollama_model()
+        logger.info("Warming up Ollama model %s...", model)
+        requests.post(
+            f"{OLLAMA_URL}/api/generate",
+            json={"model": model, "prompt": "hi", "stream": False,
+                  "options": {"num_predict": 1}},
+            timeout=(OLLAMA_CONNECT_TIMEOUT, 600),
+        )
+        logger.info("Ollama warmup complete — model %s is hot.", model)
+    except Exception as exc:
+        logger.warning("Ollama warmup failed (will load on first request): %s", exc)
+
+
+threading.Thread(target=_warmup_ollama, daemon=True).start()
 
 # ---------------------------------------------------------------------------
 # Entrypoint (development only – production uses gunicorn)

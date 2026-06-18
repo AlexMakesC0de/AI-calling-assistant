@@ -1,9 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHmac, timingSafeEqual } from "crypto";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { guessExtension } from "@/lib/media-storage";
+
+function validateTwilioSignature(
+  authToken: string,
+  url: string,
+  params: Record<string, string>,
+  signature: string,
+): boolean {
+  let data = url;
+  for (const key of Object.keys(params).sort()) {
+    data += key + params[key];
+  }
+  const expected = createHmac("sha1", authToken).update(data).digest("base64");
+  try {
+    return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+  } catch {
+    return false;
+  }
+}
 
 function inferMessageType(numMedia: number, form: Record<string, string>): string {
   if (numMedia === 0) return "text";
@@ -15,6 +34,18 @@ function inferMessageType(numMedia: number, form: Record<string, string>): strin
 }
 
 export async function POST(req: NextRequest) {
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (authToken) {
+    const signature = req.headers.get("x-twilio-signature") ?? "";
+    const url = req.url;
+    const formClone = await req.clone().formData();
+    const params: Record<string, string> = {};
+    formClone.forEach((v, k) => { params[k] = String(v); });
+    if (!validateTwilioSignature(authToken, url, params, signature)) {
+      return new NextResponse("Forbidden", { status: 403 });
+    }
+  }
+
   const formData = await req.formData();
   const form: Record<string, string> = {};
   formData.forEach((v, k) => {
