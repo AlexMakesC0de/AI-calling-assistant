@@ -1,6 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
 import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 
@@ -66,9 +64,8 @@ export async function POST(req: NextRequest) {
     console.error("[recording-status] DB insert failed:", err);
   }
 
-  // 2. Download MP3 from Twilio
+  // 2. Fetch MP3 from Twilio into memory (no local disk storage)
   let mp3Buffer: Buffer | null = null;
-  let localPath: string | null = null;
   try {
     const mp3Url = recordingUrl.endsWith(".mp3")
       ? recordingUrl
@@ -91,20 +88,9 @@ export async function POST(req: NextRequest) {
 
     if (res.ok) {
       mp3Buffer = Buffer.from(await res.arrayBuffer());
-      const filename = `${safeStem(callSid)}_${safeStem(recordingSid)}.mp3`;
-      await mkdir(env.callRecordingsDir, { recursive: true });
-      localPath = join(env.callRecordingsDir, filename);
-      await writeFile(localPath, mp3Buffer);
       console.log(
-        `[recording-status] Saved ${mp3Buffer.length} bytes to ${localPath}`,
+        `[recording-status] Fetched ${mp3Buffer.length} bytes from Twilio`,
       );
-
-      if (callId) {
-        await prisma.twilioCall.update({
-          where: { id: callId },
-          data: { localRecordingPath: localPath },
-        });
-      }
     } else {
       console.error(
         `[recording-status] MP3 download failed: ${res.status} ${res.statusText}`,
@@ -126,14 +112,15 @@ export async function POST(req: NextRequest) {
   }
 
   // 3. Forward to voice-app pipeline for transcription + AI
-  if (mp3Buffer && localPath) {
+  if (mp3Buffer) {
     try {
       const voiceAppUrl = env.voiceAppUploadUrl;
+      const filename = `${safeStem(callSid)}_${safeStem(recordingSid)}.mp3`;
       const fd = new FormData();
       fd.append(
         "file",
         new Blob([new Uint8Array(mp3Buffer)], { type: "audio/mpeg" }),
-        localPath.split(/[\\/]/).pop() ?? "call.mp3",
+        filename,
       );
       fd.append("contact_info", fromNumber);
       fd.append("account_or_reference", callSid);
