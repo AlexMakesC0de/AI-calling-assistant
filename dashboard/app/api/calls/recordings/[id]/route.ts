@@ -50,7 +50,7 @@ export async function GET(
     }
   }
 
-  return new NextResponse(body, {
+  return new NextResponse(new Uint8Array(body), {
     headers: {
       "Content-Type": "audio/mpeg",
       "Cache-Control": "private, max-age=3600",
