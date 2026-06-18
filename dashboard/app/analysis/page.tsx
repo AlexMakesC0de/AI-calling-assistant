@@ -28,10 +28,10 @@ type AnalysisRow = {
 function SourceIcon({ sourceType }: { sourceType: string }) {
   const cls = "h-3.5 w-3.5 text-muted-foreground";
   switch (sourceType) {
-    case "twilio_call": return <Phone className={cls} title="Call" />;
-    case "whatsapp_text": return <MessageCircle className={cls} title="WhatsApp" />;
+    case "twilio_call": return <span title="Call"><Phone className={cls} /></span>;
+    case "whatsapp_text": return <span title="WhatsApp"><MessageCircle className={cls} /></span>;
     case "outlook_email":
-    case "gmail_email": return <Mail className={cls} title="Email" />;
+    case "gmail_email": return <span title="Email"><Mail className={cls} /></span>;
     default: return <span className="text-xs text-muted-foreground">?</span>;
   }
 }

@@ -26,10 +26,10 @@ type IncidentRow = {
 function SourceIcon({ sourceType }: { sourceType: string | undefined }) {
   const iconClass = "h-3.5 w-3.5 text-muted-foreground";
   switch (sourceType) {
-    case "twilio_call": return <Phone className={iconClass} title="Call" />;
-    case "whatsapp_text": return <MessageCircle className={iconClass} title="WhatsApp" />;
+    case "twilio_call": return <span title="Call"><Phone className={iconClass} /></span>;
+    case "whatsapp_text": return <span title="WhatsApp"><MessageCircle className={iconClass} /></span>;
     case "outlook_email":
-    case "gmail_email": return <Mail className={iconClass} title="Email" />;
+    case "gmail_email": return <span title="Email"><Mail className={iconClass} /></span>;
     default: return <span className="text-xs text-muted-foreground">—</span>;
   }
 }
