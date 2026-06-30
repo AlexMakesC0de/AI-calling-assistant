@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 
 const GREETING_TEXT =
   process.env.CALL_GREETING_TEXT ??
@@ -12,10 +13,33 @@ const PUBLIC_BASE =
 
 export async function POST(req: NextRequest) {
   const form = await req.formData();
-  const callSid = form.get("CallSid") ?? "unknown";
-  const from = form.get("From") ?? "";
-  const to = form.get("To") ?? "";
+  const callSid = String(form.get("CallSid") ?? "unknown");
+  const from = String(form.get("From") ?? "");
+  const to = String(form.get("To") ?? "");
   console.log(`[voice] Inbound call from=${from} to=${to} CallSid=${callSid}`);
+
+  try {
+    const conversation = await prisma.callConversation.upsert({
+      where: { contactPhone: from },
+      update: { lastCallAt: new Date() },
+      create: { contactPhone: from, lastCallAt: new Date() },
+    });
+
+    await prisma.twilioCall.upsert({
+      where: { callSid },
+      update: {},
+      create: {
+        conversationId: conversation.id,
+        callSid,
+        direction: "inbound",
+        fromNumber: from,
+        toNumber: to,
+        status: "ringing",
+      },
+    });
+  } catch (err) {
+    console.error("[voice] DB insert failed:", err);
+  }
 
   const recordingCallback = `${PUBLIC_BASE.replace(/\/$/, "")}/webhook/recording-status`;
 

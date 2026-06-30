@@ -19,6 +19,7 @@ function formatDuration(seconds: number | null): string {
 function statusVariant(status: string | null): "default" | "solid" | "muted" {
   switch (status) {
     case "completed":
+    case "transcribed":
       return "muted";
     case "failed":
       return "solid";
@@ -35,7 +36,7 @@ export default async function CallsPage() {
       <div>
         <h1 className="text-2xl font-medium tracking-tight">Calls</h1>
         <p className="text-sm text-muted-foreground">
-          Inbound voice call recordings grouped by caller. Recordings are automatically transcribed and analyzed.
+          Inbound voice call recordings grouped by caller.
         </p>
       </div>
 
@@ -59,9 +60,12 @@ export default async function CallsPage() {
             </TableHeader>
             <TableBody>
               {conversations.map((conv) => (
-                <TableRow key={conv.id}>
+                <TableRow key={conv.id} className="group relative cursor-pointer">
                   <TableCell>
-                    <Link href={`/calls/${conv.id}`} className="hover:underline">
+                    <Link
+                      href={`/calls/${conv.id}`}
+                      className="after:absolute after:inset-0"
+                    >
                       <div className="font-medium">{conv.contactName || conv.contactPhone}</div>
                       {conv.contactName && (
                         <div className="font-mono text-xs text-muted-foreground">{conv.contactPhone}</div>

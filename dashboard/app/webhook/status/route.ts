@@ -10,6 +10,8 @@ export async function POST(req: NextRequest) {
 
   const callSid = form["CallSid"] ?? "";
   const callStatus = form["CallStatus"] ?? "";
+  const fromNumber = form["From"] ?? "";
+  const toNumber = form["To"] ?? "";
   const errorCode = form["ErrorCode"] ?? null;
   const errorMessage = form["ErrorMessage"] ?? null;
 
@@ -25,6 +27,8 @@ export async function POST(req: NextRequest) {
           status: callStatus,
           errorCode,
           errorMessage,
+          ...(fromNumber ? { fromNumber } : {}),
+          ...(toNumber ? { toNumber } : {}),
         },
       });
     } catch (err) {
