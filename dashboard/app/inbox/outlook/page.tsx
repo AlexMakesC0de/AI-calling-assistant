@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { InboxTabs } from "@/components/inbox-tabs";
 import {
   flattenAddresses,
   listOutlookMessages,
@@ -237,7 +236,6 @@ export default async function EmailInboxPage({ searchParams }: { searchParams: S
         </div>
       </div>
 
-      <InboxTabs active="outlook" outlookConfigured={anyConnected} outlookUnread={unreadCount} />
 
       {showConnect && !error && (
         <Card>
